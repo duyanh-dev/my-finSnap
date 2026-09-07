@@ -7,6 +7,7 @@ import { CameraView } from "expo-camera";
 interface Props {
   facing: "back" | "front";
   zoom: number;
+  flash: "off" | "on" | "auto"; // 🚀 THÊM KHAI BÁO FLASH
   focusPos: { x: number; y: number };
   focusAlpha: Animated.Value;
   onGrant: (e: any) => void;
@@ -15,7 +16,8 @@ interface Props {
 }
 
 const CameraViewfinder = forwardRef<any, Props>((props, ref) => {
-  const { facing, zoom, focusPos, focusAlpha, onGrant, onMove, onRelease } = props;
+  // 🚀 LẤY FLASH TỪ PROPS RA
+  const { facing, zoom, flash, focusPos, focusAlpha, onGrant, onMove, onRelease } = props;
 
   return (
     <View
@@ -25,7 +27,16 @@ const CameraViewfinder = forwardRef<any, Props>((props, ref) => {
       onResponderMove={onMove}
       onResponderRelease={onRelease}
     >
-      <CameraView style={StyleSheet.absoluteFill} ref={ref} facing={facing} zoom={zoom} autofocus="on" />
+      {/* 🚀 TRUYỀN FLASH VÀO CAMERAVIEW */}
+      <CameraView 
+        style={StyleSheet.absoluteFill} 
+        ref={ref} 
+        facing={facing} 
+        zoom={zoom} 
+        flash={flash} 
+        autofocus="on" 
+      />
+      
       <Animated.View
         style={[
           styles.focusRing,

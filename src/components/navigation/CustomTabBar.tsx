@@ -5,7 +5,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
-export default function CustomTabBar({ state, navigation }: any) {
+// 🚀 BƯỚC 1: Khai báo thêm 'descriptors' vào trong ngoặc
+export default function CustomTabBar({ state, descriptors, navigation }: any) {
+  
+  // 🚀 BƯỚC 2: Rút option của màn hình hiện tại ra để kiểm tra
+  const { options } = descriptors[state.routes[state.index].key];
+
+  // Nếu màn hình (như tab index lúc mới vào) yêu cầu giấu TabBar đi, thì ngắt luôn không render gì cả
+  if (options.tabBarStyle?.display === 'none') {
+    return null;
+  }
+
   return (
     <View style={styles.container} pointerEvents="box-none">
       <BlurView intensity={80} tint="dark" style={styles.pill}>

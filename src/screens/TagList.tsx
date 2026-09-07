@@ -1,10 +1,17 @@
-import React, { useState, useCallback } from 'react';
+/**
+ * Project: MyLocketFinance
+ * Developer: Bui Duy Anh (anhbui.dev)
+ * Shift: UI/UX Focused - Premium Tag List
+ */
+
+import React, { useState, useCallback, useRef } from 'react';
 import { 
   StyleSheet, View, Text, TouchableOpacity, FlatList, 
   Image, Dimensions, Modal, TextInput, ScrollView, Alert,
-  KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, LayoutAnimation
+  KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Animated
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -14,9 +21,10 @@ import {
   deleteTag, updateTagFull, deleteExpense 
 } from '../../src/components/services/database';
 import { getCurrencyConfig, Currency, CURRENCIES } from '../../src/components/services/settings_db';
+import { saveImageToPermanentStorage } from '../../src/components/services/storage_service';
 
 const { width, height } = Dimensions.get('window');
-const ITEM_WIDTH = (width - 60) / 2; // Tính toán để grid cân đối
+const ITEM_WIDTH = (width - 60) / 2; 
 
 export interface Expense { id: number; amount: string; currency: string; amount_base: number; imageUri: string; tag: string; date: string; }
 export interface TagInfo { name: string; icon: string; color: string; bgImage: string; totalBase: number; count: number; }
@@ -24,6 +32,70 @@ export interface TagInfo { name: string; icon: string; color: string; bgImage: s
 const ICON_LIST = ['cart', 'restaurant', 'airplane', 'car', 'gift', 'cafe', 'game-controller', 'fitness', 'briefcase', 'home', 'heart', 'shirt'];
 const COLOR_LIST = ['#FFD700', '#FF6B6B', '#4D96FF', '#6BCB77', '#AC70FF', '#F94C10', '#00DFA2', '#FFFFFF'];
 
+// =====================================================================
+// 🚀 1. COMPONENT THẺ TAG
+// =====================================================================
+const AlbumListItem = ({ item, currency, onSelect, onEdit, onDelete }: any) => {
+  const swipeableRef = useRef<any>(null);
+
+  const formatDisplay = (num: number) => {
+    return num.toLocaleString('vi-VN', { maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2, minimumFractionDigits: 0 });
+  };
+
+  const renderRightActions = (progress: any, dragX: Animated.AnimatedInterpolation<any>) => {
+    const scale = dragX.interpolate({ inputRange: [-100, 0], outputRange: [1, 0.5], extrapolate: 'clamp' });
+    const opacity = dragX.interpolate({ inputRange: [-100, -20, 0], outputRange: [1, 0.5, 0], extrapolate: 'clamp' });
+
+    return (
+      <View style={styles.swipeActionContainer}>
+        <Animated.View style={[styles.swipeActionBox, { transform: [{ scale }], opacity }]}>
+          <TouchableOpacity style={[styles.actionCircle, { backgroundColor: '#333' }]} onPress={() => { swipeableRef.current?.close(); onEdit(item); }}>
+            <Ionicons name="pencil" size={20} color={item.color} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionCircle, { backgroundColor: '#FF6B6B' }]} onPress={() => { swipeableRef.current?.close(); onDelete(item.name); }}>
+            <Ionicons name="trash" size={20} color="#fff" />
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    );
+  };
+
+  return (
+    <Swipeable ref={swipeableRef} renderRightActions={renderRightActions} overshootRight={false} friction={1.5}>
+      <TouchableOpacity 
+        activeOpacity={0.8}
+        style={styles.albumCard} 
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSelect(item.name); }}
+      >
+        <View style={styles.cardBgWrapper}>
+          {item.bgImage ? (
+            <Image source={{ uri: item.bgImage }} style={styles.cardBgImg} blurRadius={12} />
+          ) : (
+            <View style={[styles.cardBgImg, { backgroundColor: '#222224' }]} />
+          )}
+          <View style={styles.cardOverlay} />
+        </View>
+
+        <View style={styles.cardContent}>
+          <View style={[styles.iconBox, { borderColor: item.color }]}>
+            <Ionicons name={item.icon as any} size={24} color={item.color} />
+          </View>
+          
+          <View style={styles.cardInfo}>
+            <Text style={styles.cardName}>{item.name.toUpperCase()}</Text>
+            <Text style={styles.cardStats}>{item.count} giao dịch • {formatDisplay(item.totalBase / currency.rate)}{currency.symbol}</Text>
+          </View>
+          
+          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.3)" />
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
+  );
+};
+
+// =====================================================================
+// 🚀 2. MÀN HÌNH CHÍNH
+// =====================================================================
 export default function ExploreScreen() {
   const router = useRouter();
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
@@ -39,6 +111,9 @@ export default function ExploreScreen() {
   const [selColor, setSelColor] = useState('#FFD700');
   const [selBg, setSelBg] = useState<string | null>(null);
 
+  // 🚀 BỘ NHỚ TẠM ĐỂ LƯU VỊ TRÍ TAG (TRÁNH BỊ NHẢY XUỐNG CUỐI KHI EDIT)
+  const tagOrderRef = useRef<string[]>([]);
+
   const loadData = async () => {
     try {
       initDatabase();
@@ -50,8 +125,37 @@ export default function ExploreScreen() {
       const tagData = allTags.map(t => {
         const related = allExp.filter(e => e.tag === t.name);
         const totalBase = related.reduce((sum, item) => sum + (Number(item.amount_base) || 0), 0);
-        return { name: t.name, icon: t.icon, color: t.color, bgImage: t.bgImage, totalBase, count: related.length };
+        
+        let validBg = t.bgImage;
+        if (!validBg || validBg.trim() === '') {
+           const itemsWithImg = related.filter(r => r.imageUri);
+           if (itemsWithImg.length > 0) {
+               validBg = itemsWithImg[itemsWithImg.length - 1].imageUri;
+           }
+        }
+
+        return { name: t.name, icon: t.icon, color: t.color, bgImage: validBg, totalBase, count: related.length };
       });
+
+      // 🚀 LOGIC ĐÓNG BĂNG VỊ TRÍ TAG
+      if (tagOrderRef.current.length === 0 && tagData.length > 0) {
+        // Lần đầu tiên load: Lấy đúng thứ tự hiện tại của Database
+        tagOrderRef.current = tagData.map(t => t.name);
+      } else {
+        // Những lần sau: Thêm tag mới vào cuối danh sách (nếu có)
+        const existingNames = new Set(tagOrderRef.current);
+        tagData.forEach(t => {
+          if (!existingNames.has(t.name)) {
+            tagOrderRef.current.push(t.name);
+          }
+        });
+      }
+
+      // 🚀 Sắp xếp lại Tag Data y hệt như bộ nhớ đã lưu
+      tagData.sort((a, b) => {
+        return tagOrderRef.current.indexOf(a.name) - tagOrderRef.current.indexOf(b.name);
+      });
+
       setAlbums(tagData);
 
       if (selectedTag) {
@@ -64,18 +168,37 @@ export default function ExploreScreen() {
 
   useFocusEffect(useCallback(() => { loadData(); }, [selectedTag]));
 
-  const toggleModal = (show: boolean) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setModalOpen(show);
-  };
+  const handleSaveAlbum = async () => {
+    if (!newName.trim()) {
+      Alert.alert("Lỗi", "Tên thẻ không được để trống!");
+      return;
+    }
 
-  const handleSaveAlbum = () => {
-    if (!newName.trim()) return;
-    if (isEditAlbum) updateTagFull(oldTagName, newName.trim(), selIcon, selColor, selBg || '');
-    else saveTag(newName.trim(), selIcon, selColor, selBg || '');
-    toggleModal(false);
+    const trimmedNewName = newName.trim();
+
+    let finalBg = selBg || '';
+    if (finalBg && (finalBg.includes('Cache') || finalBg.includes('ImagePicker') || finalBg.includes('ImageManipulator'))) {
+      try { finalBg = await saveImageToPermanentStorage(finalBg); } 
+      catch (e) { console.log("Save Image Error:", e); }
+    }
+
+    if (isEditAlbum) {
+      // 🚀 NẾU EDIT: Tìm vị trí tag cũ trong bộ nhớ và thế tên mới vào đúng chỗ đó!
+      const idx = tagOrderRef.current.indexOf(oldTagName);
+      if (idx !== -1) {
+        tagOrderRef.current[idx] = trimmedNewName;
+      }
+
+      updateTagFull(oldTagName, trimmedNewName, selIcon, selColor, finalBg);
+      if (selectedTag === oldTagName) setSelectedTag(trimmedNewName);
+    } else {
+      saveTag(trimmedNewName, selIcon, selColor, finalBg);
+    }
+
+    setModalOpen(false);
     resetForm();
     loadData();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   const resetForm = () => {
@@ -90,64 +213,91 @@ export default function ExploreScreen() {
     setSelIcon(album.icon);
     setSelColor(album.color);
     setSelBg(album.bgImage);
-    toggleModal(true);
+    setModalOpen(true);
   };
 
   const confirmDeleteAlbum = (name: string) => {
-    Alert.alert("Xóa Tag?", `Mục "${name}" sẽ bị xóa, ảnh vẫn còn ở màn hình chính.`, [
+    Alert.alert("Xóa Thẻ?", `Mục "${name}" sẽ bị xóa, nhưng các hóa đơn bên trong vẫn được giữ lại an toàn ở màn hình chính.`, [
       { text: "Hủy", style: "cancel" },
-      { text: "Xóa", style: "destructive", onPress: () => { deleteTag(name); loadData(); } }
+      { 
+        text: "Xóa", 
+        style: "destructive", 
+        onPress: () => { 
+          // 🚀 Khi xóa Tag, cũng phải dọn luôn trong bộ nhớ vị trí
+          tagOrderRef.current = tagOrderRef.current.filter(n => n !== name);
+          deleteTag(name); 
+          loadData(); 
+        } 
+      }
     ]);
   };
 
   const confirmDeleteItem = (id: number) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert("Xác nhận xóa", "Món chi tiêu này sẽ biến mất vĩnh viễn đó bạn nhé", [
+    Alert.alert("Xóa giao dịch", "Giao dịch này sẽ bị xóa vĩnh viễn.", [
       { text: "Hủy", style: "cancel" },
-      { text: "Xóa luôn", style: "destructive", onPress: () => { deleteExpense(id); loadData(); } }
+      { text: "Xóa", style: "destructive", onPress: () => { deleteExpense(id); loadData(); } }
     ]);
   };
 
   const formatDisplay = (num: number) => {
-    return num.toLocaleString('vi-VN', { 
-        maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2,
-        minimumFractionDigits: 0 
-    });
+    return num.toLocaleString('vi-VN', { maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2, minimumFractionDigits: 0 });
   };
 
-  const renderRightActions = (album: TagInfo) => (
-    <View style={styles.swipeActions}>
-      <TouchableOpacity style={[styles.swipeBtn, { backgroundColor: '#222' }]} onPress={() => openEditAlbum(album)}>
-        <Ionicons name="pencil" size={20} color={album.color} />
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.swipeBtn, { backgroundColor: '#FF6B6B' }]} onPress={() => confirmDeleteAlbum(album.name)}>
-        <Ionicons name="trash" size={20} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  );
+  const pickImage = async (useCamera: boolean) => {
+    try {
+      const options: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1, 
+      };
+
+      const result = useCamera 
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+        
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const originalUri = result.assets[0].uri;
+        
+        const manipResult = await ImageManipulator.manipulateAsync(
+          originalUri,
+          [{ resize: { width: 1080 } }], 
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG } 
+        );
+
+        setSelBg(manipResult.uri); 
+      }
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert("Lỗi", "Đã có lỗi xảy ra khi xử lý bức ảnh này.");
+    }
+  };
 
   if (selectedTag) {
     const info = albums.find(a => a.name === selectedTag);
     return (
       <View style={styles.container}>
         <View style={styles.fixedBg}>
-          <Image source={info?.bgImage ? { uri: info.bgImage } : undefined} style={StyleSheet.absoluteFill} blurRadius={30} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]} />
+          {info?.bgImage ? (
+            <Image source={{ uri: info.bgImage }} style={StyleSheet.absoluteFill} blurRadius={40} />
+          ) : null}
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.7)' }]} />
         </View>
 
         <View style={styles.albumHeader}>
-          <TouchableOpacity onPress={() => setSelectedTag(null)}><Ionicons name="chevron-back" size={30} color={info?.color ?? '#FFD700'} /></TouchableOpacity>
+          <TouchableOpacity style={styles.backBtn} onPress={() => setSelectedTag(null)}>
+            <Ionicons name="chevron-back" size={28} color={info?.color ?? '#FFD700'} />
+          </TouchableOpacity>
           <View style={styles.albumTitleBox}>
             <Text style={styles.albumTitle}>{selectedTag.toUpperCase()}</Text>
             <Text style={[styles.albumSub, { color: info?.color ?? '#FFD700' }]}>
-              {formatDisplay((info?.totalBase ?? 0) / currency.rate)} {currency.symbol}
+              {formatDisplay((info?.totalBase ?? 0) / currency.rate)}{currency.symbol}
             </Text>
           </View>
           <TouchableOpacity 
             style={[styles.albumAddBtn, { backgroundColor: info?.color ?? '#FFD700' }]} 
             onPress={() => router.push({ pathname: '/modal', params: { tag: selectedTag } })}
           >
-            <Ionicons name="camera" size={20} color="#000" />
+            <Ionicons name="add" size={24} color="#000" />
           </TouchableOpacity>
         </View>
 
@@ -164,7 +314,6 @@ export default function ExploreScreen() {
               >
                 <View style={styles.imageWrapper}>
                     <Image source={{ uri: item.imageUri }} style={styles.itemImg} />
-                    {/* GIÁ TIỀN NỔI BẬT NẰM TRONG ẢNH */}
                     <View style={styles.itemPriceBadge}>
                         <Text style={styles.itemPriceText}>{formatDisplay(item.amount_base / currency.rate)}{currency.symbol}</Text>
                     </View>
@@ -172,16 +321,10 @@ export default function ExploreScreen() {
               </TouchableOpacity>
 
               <View style={styles.itemActionRow}>
-                <TouchableOpacity 
-                    style={styles.actionBtn} 
-                    onPress={() => router.push({ pathname: '/modal', params: { editId: item.id.toString(), oldAmount: item.amount, oldImage: item.imageUri, oldCurrency: item.currency, oldTag: item.tag } })}
-                >
+                <TouchableOpacity style={styles.actionBtnGrid} onPress={() => router.push({ pathname: '/modal', params: { editId: item.id.toString(), oldAmount: item.amount, oldImage: item.imageUri, oldCurrency: item.currency, oldTag: item.tag } })}>
                   <Ionicons name="pencil" size={16} color="#FFD700" />
                 </TouchableOpacity>
-                <TouchableOpacity 
-                    style={[styles.actionBtn, { marginLeft: 10 }]} 
-                    onPress={() => confirmDeleteItem(item.id)}
-                >
+                <TouchableOpacity style={[styles.actionBtnGrid, { marginLeft: 10 }]} onPress={() => confirmDeleteItem(item.id)}>
                   <Ionicons name="trash" size={16} color="#FF6B6B" />
                 </TouchableOpacity>
               </View>
@@ -195,81 +338,99 @@ export default function ExploreScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
+        
         <View style={styles.header}>
-          <Text style={styles.title}>Tag list</Text>
-          <TouchableOpacity onPress={() => { resetForm(); toggleModal(true); }}>
-            <Ionicons name="add-circle" size={38} color="#FFD700" />
+          <Text style={styles.title}>Thẻ phân loại</Text>
+          <TouchableOpacity style={styles.mainAddBtn} onPress={() => { resetForm(); setModalOpen(true); }}>
+            <Ionicons name="add" size={26} color="#000" />
           </TouchableOpacity>
         </View>
 
         <FlatList
           data={albums}
+          // Dùng name làm key an toàn vì ta đã giữ đúng vị trí
           keyExtractor={(item) => item.name}
           contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
-            <Swipeable renderRightActions={() => renderRightActions(item)} overshootRight={false}>
-              <TouchableOpacity 
-                activeOpacity={0.8}
-                style={styles.albumCard} 
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedTag(item.name); }}
-              >
-                <Image source={item.bgImage ? { uri: item.bgImage } : undefined} style={styles.cardBg} blurRadius={15} />
-                <View style={[styles.cardOverlay, { backgroundColor: item.bgImage ? 'rgba(0,0,0,0.6)' : '#222224' }]} />
-                <View style={[styles.iconBox, { backgroundColor: item.color + '20' }]}>
-                  <Ionicons name={item.icon as any} size={24} color={item.color} />
-                </View>
-                <View style={styles.cardInfo}>
-                  <Text style={styles.cardName}>{item.name.toUpperCase()}</Text>
-                  <Text style={styles.cardStats}>{item.count} món • {formatDisplay(item.totalBase / currency.rate)} {currency.symbol}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={item.color + '80'} />
-              </TouchableOpacity>
-            </Swipeable>
+            <AlbumListItem 
+              item={item} 
+              currency={currency} 
+              onSelect={setSelectedTag} 
+              onEdit={openEditAlbum} 
+              onDelete={confirmDeleteAlbum} 
+            />
           )}
         />
 
-        <Modal visible={isModalOpen} animationType="slide" transparent>
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView 
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={{ flex: 1, justifyContent: 'flex-end' }}
-            >
-              <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                <View style={styles.modalContent}>
-                  <View style={styles.modalTop}>
-                    <Text style={styles.modalTitle}>{isEditAlbum ? "Sửa Tag" : "Tag mới"}</Text>
-                    <TouchableOpacity onPress={() => toggleModal(false)}><Ionicons name="close-circle" size={30} color="#444" /></TouchableOpacity>
+        <Modal visible={isModalOpen} animationType="fade" transparent>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={Keyboard.dismiss}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardWrapper}>
+              <View style={styles.modalContent}>
+                
+                <View style={styles.modalTop}>
+                  <Text style={styles.modalTitle}>{isEditAlbum ? "Sửa Thẻ" : "Tạo Thẻ Mới"}</Text>
+                  <TouchableOpacity style={styles.closeModalBtn} onPress={() => setModalOpen(false)}>
+                    <Ionicons name="close" size={24} color="#555" />
+                  </TouchableOpacity>
+                </View>
+                
+                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Nhập tên thẻ..." 
+                    placeholderTextColor="#666" 
+                    value={newName} 
+                    onChangeText={setNewName} 
+                  />
+                  
+                  <Text style={styles.label}>BIỂU TƯỢNG</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                    {ICON_LIST.map(i => (
+                      <TouchableOpacity key={i} style={[styles.iconPick, selIcon === i && { backgroundColor: selColor }]} onPress={() => { Keyboard.dismiss(); setSelIcon(i); }}>
+                        <Ionicons name={i as any} size={22} color={selIcon === i ? "#000" : "#888"} />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  
+                  <Text style={styles.label}>MÀU SẮC</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 30 }}>
+                    {COLOR_LIST.map(c => (
+                      <TouchableOpacity key={c} style={[styles.colorPick, { backgroundColor: c }, selColor === c && styles.colorActive]} onPress={() => { Keyboard.dismiss(); setSelColor(c); }} />
+                    ))}
+                  </ScrollView>
+
+                  <Text style={styles.label}>ẢNH NỀN THẺ (TÙY CHỌN)</Text>
+                  <View style={styles.imgActionRow}>
+                    <TouchableOpacity style={styles.imgActionBtn} onPress={() => pickImage(true)}>
+                      <Ionicons name="camera" size={20} color="#fff" />
+                      <Text style={styles.imgText}>Chụp ảnh</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.imgActionBtn} onPress={() => pickImage(false)}>
+                      <Ionicons name="image" size={20} color="#fff" />
+                      <Text style={styles.imgText}>Thư viện</Text>
+                    </TouchableOpacity>
                   </View>
                   
-                  <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                    <TextInput style={styles.input} placeholder="Tên album..." placeholderTextColor="#555" value={newName} onChangeText={setNewName} />
-                    <Text style={styles.label}>BIỂU TƯỢNG & MÀU SẮC</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
-                      {ICON_LIST.map(i => (
-                        <TouchableOpacity key={i} style={[styles.iconPick, selIcon === i && { backgroundColor: selColor }]} onPress={() => setSelIcon(i)}>
-                          <Ionicons name={i as any} size={20} color={selIcon === i ? "#000" : "#888"} />
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 30 }}>
-                      {COLOR_LIST.map(c => (
-                        <TouchableOpacity key={c} style={[styles.colorPick, { backgroundColor: c }, selColor === c && styles.colorActive]} onPress={() => setSelColor(c)} />
-                      ))}
-                    </ScrollView>
-                    <View style={styles.imgActionRow}>
-                      <TouchableOpacity style={styles.imgActionBtn} onPress={() => ImagePicker.launchCameraAsync({quality:0.6}).then(res => !res.canceled && setSelBg(res.assets[0].uri))}><Ionicons name="camera" size={18} color="#FFD700" /><Text style={styles.imgText}>CHỤP</Text></TouchableOpacity>
-                      <TouchableOpacity style={styles.imgActionBtn} onPress={() => ImagePicker.launchImageLibraryAsync({quality:0.6}).then(res => !res.canceled && setSelBg(res.assets[0].uri))}><Ionicons name="image" size={18} color="#FFD700" /><Text style={styles.imgText}>KHO ẢNH</Text></TouchableOpacity>
-                    </View>
-                    {selBg && <Image source={{ uri: selBg }} style={styles.preview} blurRadius={10} />}
-                    <TouchableOpacity style={[styles.createBtn, { backgroundColor: selColor }]} onPress={handleSaveAlbum}>
-                      <Text style={styles.createBtnText}>XÁC NHẬN</Text>
-                    </TouchableOpacity>
-                  </ScrollView>
-                </View>
-              </TouchableWithoutFeedback>
+                  {selBg ? (
+                     <View style={styles.previewContainer}>
+                         <Image source={{ uri: selBg }} style={styles.preview} blurRadius={10} />
+                     </View>
+                  ) : null}
+
+                  <TouchableOpacity style={[styles.createBtn, { backgroundColor: selColor }]} onPress={handleSaveAlbum}>
+                    <Text style={[styles.createBtnText, { color: selColor === '#FFFFFF' ? '#000' : '#000' }]}>
+                      {isEditAlbum ? "CẬP NHẬT" : "TẠO THẺ"}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={{ height: 20 }} />
+                </ScrollView>
+
+              </View>
             </KeyboardAvoidingView>
-          </View>
+          </TouchableOpacity>
         </Modal>
+
       </View>
     </GestureHandlerRootView>
   );
@@ -278,70 +439,64 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#161618' },
   fixedBg: { ...StyleSheet.absoluteFillObject, zIndex: -1 },
-  header: { marginTop: 60, paddingHorizontal: 25, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  title: { color: '#fff', fontSize: 34, fontWeight: '900' },
-  listContainer: { paddingHorizontal: 20, paddingBottom: 150 },
-  albumCard: { height: 95, borderRadius: 28, marginBottom: 15, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, overflow: 'hidden' },
-  cardBg: { ...StyleSheet.absoluteFillObject },
-  cardOverlay: { ...StyleSheet.absoluteFillObject },
-  iconBox: { width: 48, height: 48, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  cardInfo: { flex: 1 },
-  cardName: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  cardStats: { color: '#888', fontSize: 12, marginTop: 4 },
-  swipeActions: { flexDirection: 'row', width: 140, marginBottom: 15, marginLeft: 10 },
-  swipeBtn: { flex: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 25, marginHorizontal: 2 },
   
-  albumHeader: { marginTop: 60, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 25 },
+  header: { marginTop: 60, paddingHorizontal: 25, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  title: { color: '#fff', fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
+  mainAddBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFD700', justifyContent: 'center', alignItems: 'center', shadowColor: '#FFD700', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  
+  listContainer: { paddingHorizontal: 20, paddingBottom: 120 },
+  
+  albumCard: { height: 100, borderRadius: 24, marginBottom: 16, backgroundColor: '#222224', elevation: 5, overflow: 'hidden' },
+  cardBgWrapper: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 },
+  cardBgImg: { width: '100%', height: '100%', resizeMode: 'cover', transform: [{ scale: 1.1 }] },
+  cardOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
+  cardContent: { flexDirection: 'row', alignItems: 'center', height: '100%', paddingHorizontal: 18, zIndex: 10 }, 
+  iconBox: { width: 50, height: 50, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 15, borderWidth: 1 },
+  cardInfo: { flex: 1, justifyContent: 'center' },
+  cardName: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 0.5, marginBottom: 4 },
+  cardStats: { color: '#ccc', fontSize: 12, fontWeight: '600' },
+
+  swipeActionContainer: { width: 130, height: 100, justifyContent: 'center', alignItems: 'center', paddingLeft: 10 },
+  swipeActionBox: { flexDirection: 'row', gap: 10 },
+  actionCircle: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
+  
+  albumHeader: { marginTop: 60, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 30 },
+  backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
   albumTitleBox: { flex: 1, alignItems: 'center' },
-  albumTitle: { color: '#fff', fontSize: 20, fontWeight: '900' },
-  albumSub: { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  albumAddBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  albumTitle: { color: '#fff', fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  albumSub: { fontSize: 14, fontWeight: '700', marginTop: 4 },
+  albumAddBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
 
   gridContent: { paddingHorizontal: 20, paddingBottom: 100 },
   itemCard: { width: ITEM_WIDTH, marginBottom: 25, marginRight: 20 },
-  imageWrapper: { borderRadius: 28, overflow: 'hidden', position: 'relative' },
+  imageWrapper: { borderRadius: 24, overflow: 'hidden', position: 'relative' },
   itemImg: { width: '100%', aspectRatio: 1 },
-  
-  itemPriceBadge: { 
-    position: 'absolute', 
-    bottom: 12, 
-    left: 12, 
-    backgroundColor: 'rgba(0,0,0,0.75)', 
-    paddingHorizontal: 10, 
-    paddingVertical: 5, 
-    borderRadius: 12 
-  },
-  itemPriceText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  itemPriceBadge: { position: 'absolute', bottom: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.8)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  itemPriceText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  itemActionRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 12, gap: 12 },
+  actionBtnGrid: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#222', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
 
-  itemActionRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
-    marginTop: 12 
-  },
-  actionBtn: { 
-    width: 38, 
-    height: 38, 
-    borderRadius: 19, 
-    backgroundColor: '#222', 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#333'
-  },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)' },
-  modalContent: { backgroundColor: '#1c1c1e', borderTopLeftRadius: 35, borderTopRightRadius: 35, padding: 30, maxHeight: height * 0.85 },
-  modalTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  keyboardWrapper: { width: '100%', maxHeight: height * 0.9 }, 
+  modalContent: { backgroundColor: '#1C1C1E', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24 },
+  modalTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  input: { backgroundColor: '#2c2c2e', color: '#fff', padding: 20, borderRadius: 20, fontSize: 16, marginBottom: 25 },
-  label: { color: '#555', fontSize: 10, fontWeight: 'bold', marginBottom: 15, letterSpacing: 1 },
-  iconPick: { width: 45, height: 45, borderRadius: 22, backgroundColor: '#2c2c2e', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  colorPick: { width: 35, height: 35, borderRadius: 18, marginRight: 15 },
-  colorActive: { borderWidth: 2, borderColor: '#fff' },
-  imgActionRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  imgActionBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#2c2c2e', padding: 15, borderRadius: 18, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  imgText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
-  preview: { width: '100%', height: 120, borderRadius: 20, marginBottom: 20 },
-  createBtn: { padding: 20, borderRadius: 22, alignItems: 'center', marginTop: 10 },
-  createBtnText: { color: '#000', fontWeight: '900', fontSize: 16 }
+  closeModalBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' },
+  
+  input: { backgroundColor: '#2A2A2C', color: '#fff', paddingHorizontal: 20, paddingVertical: 18, borderRadius: 16, fontSize: 16, marginBottom: 24, fontWeight: 'bold' },
+  label: { color: '#888', fontSize: 12, fontWeight: '700', marginBottom: 12, letterSpacing: 0.5 },
+  
+  iconPick: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#2A2A2C', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  colorPick: { width: 40, height: 40, borderRadius: 20, marginRight: 15 },
+  colorActive: { borderWidth: 3, borderColor: '#fff' },
+  
+  imgActionRow: { flexDirection: 'row', gap: 15, marginBottom: 20 },
+  imgActionBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#2A2A2C', paddingVertical: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  imgText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  
+  previewContainer: { width: '100%', height: 120, borderRadius: 16, overflow: 'hidden', marginBottom: 24, backgroundColor: '#2A2A2C' },
+  preview: { width: '100%', height: '100%', resizeMode: 'cover' },
+  
+  createBtn: { paddingVertical: 18, borderRadius: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5 },
+  createBtnText: { color: '#000', fontWeight: '900', fontSize: 16, letterSpacing: 0.5 }
 });

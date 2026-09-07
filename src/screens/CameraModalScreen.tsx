@@ -1,47 +1,53 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, Animated, Platform, Keyboard, Alert } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, Animated, Platform, Keyboard, Alert, DeviceEventEmitter } from "react-native";
 import { useCameraPermissions } from "expo-camera";
 import * as MediaLibrary from "expo-media-library";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// SERVICES
-import { addExpense, updateExpense, getAllTags, saveTag } from "../components/services/database";
+import { addExpense, updateExpense, getAllTags, saveTag, getExpenses } from "../components/services/database";
 import { getCurrencyConfig, convertCurrency } from "../components/services/settings_db";
 import { Currency } from "../types";
 
-// COMPONENTS TÁCH LẺ
 import CameraViewfinder from "../components/features/camera/CameraViewfinder";
-import CameraControls from "../components/features/camera/CameraControls";
 import ExpenseForm from "../components/features/camera/ExpenseForm";
 import TagPickerModal from "../components/features/camera/TagPickerModal";
+import { saveImageToPermanentStorage } from '../components/services/storage_service';
 
 const ZOOM_LEVELS = [0.5, 1, 2, 3];
 const ZOOM_1X = 0.035;
 
-export default function CameraModalScreen() {
+interface CameraProps {
+  isRootMode?: boolean;
+  onSaveSuccess?: () => void;
+}
+
+export default function CameraModalScreen({ isRootMode = false, onSaveSuccess }: CameraProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams();
   const [permission, requestPermission] = useCameraPermissions();
 
-  // STATES
   const isFromExplore = !!params.tag;
   const editId = params.editId ? String(params.editId) : null;
   const [photo, setPhoto] = useState<string | null>(params.oldImage ? String(params.oldImage) : null);
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<Currency>({ label: "", code: (params.oldCurrency as string) || "VNĐ", symbol: params.oldCurrency === "VNĐ" ? "đ" : "$", rate: 1 });
+  
   const [facing, setFacing] = useState<"back" | "front">("back");
+  const [flash, setFlash] = useState<"off" | "on" | "auto">("off");
   const [zoom, setZoom] = useState(ZOOM_1X);
+  
   const [focusPos, setFocusPos] = useState({ x: 0, y: 0 });
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const [availableTags, setAvailableTags] = useState<any[]>([]);
   const [selectedTag, setSelectedTag] = useState<string>(params.tag ? String(params.tag) : (params.oldTag ? String(params.oldTag) : ""));
   const [showTagPicker, setShowTagPicker] = useState(false);
+  const [todayTotalDisplay, setTodayTotalDisplay] = useState("--");
 
-  // REFS
   const cameraRef = useRef<any>(null);
   const zoomRef = useRef(ZOOM_1X);
   const zoomIdx = useRef(1);
@@ -51,6 +57,18 @@ export default function CameraModalScreen() {
   const isPinching = useRef(false);
   const startDist = useRef<number | null>(null);
   const startZoom = useRef<number>(ZOOM_1X);
+
+  // 🚀 STATE ANIMATION CHO HIỆU ỨNG CHỚP FLASH 
+  const fakeFlashAlpha = useRef(new Animated.Value(0)).current;
+
+  const resetCameraState = () => {
+    setPhoto(null);
+    setAmount("");
+    setSelectedTag("");
+    setZoom(ZOOM_1X);
+    zoomIdx.current = 1;
+    setAvailableTags(getAllTags());
+  };
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -63,30 +81,38 @@ export default function CameraModalScreen() {
       setCurrency(config);
       setAvailableTags(getAllTags());
 
+      try {
+        const allExpenses = getExpenses() as any[];
+        if (allExpenses && allExpenses.length > 0) {
+          const now = new Date();
+          const todayData = allExpenses.filter(item => {
+            const itemDate = new Date(item.date);
+            return itemDate.toDateString() === now.toDateString();
+          });
+          const total = todayData.reduce((sum, item) => sum + convertCurrency(Number(item.amount), item.currency, config.code), 0);
+          setTodayTotalDisplay(total.toLocaleString('vi-VN'));
+        } else {
+          setTodayTotalDisplay("0");
+        }
+      } catch (e) {
+        setTodayTotalDisplay("0");
+      }
+
       if (editId && params.oldAmount && params.oldCurrency) {
         const isSameCurrency = params.oldCurrency === config.code;
         let displayValue = "";
 
         if (isSameCurrency) {
-          // --- LOGIC CŨ ĐÃ ĐÚNG: Nếu cùng loại tiền, lấy thẳng giá trị gốc ---
           displayValue = String(params.oldAmount).replace('.', ',');
         } else {
-          // --- LOGIC CŨ ĐÃ ĐÚNG: Chốt chặn sai số làm tròn khi đổi tiền tệ ---
-          const converted = convertCurrency(
-            Number(params.oldAmount),
-            String(params.oldCurrency),
-            config.code
-          );
-
+          const converted = convertCurrency(Number(params.oldAmount), String(params.oldCurrency), config.code);
           if (config.code === 'VNĐ') {
             displayValue = Math.round(converted).toString();
           } else {
-            // Dùng toFixed(2) để triệt tiêu số lẻ rác (ví dụ 121.121121121)
             displayValue = converted.toFixed(2).replace('.', ',');
             if (displayValue.endsWith(',00')) displayValue = displayValue.split(',')[0];
           }
         }
-        // Đẩy vào hàm format để thêm dấu chấm hàng nghìn
         setAmount(formatCurrency(displayValue, config.code));
       }
     };
@@ -99,11 +125,10 @@ export default function CameraModalScreen() {
     };
   }, [editId]);
 
-  // LOGIC FORMAT TIỀN TỆ (Giữ nguyên bản chuẩn nhất)
   const formatCurrency = (val: string, forcedCode?: string) => {
     if (!val) return "";
     const activeCode = forcedCode || currency.code;
-    let cleanNext = val.replace(/\./g, ""); // Xóa phân cách hàng nghìn cũ
+    let cleanNext = val.replace(/\./g, "");
     if (activeCode === "VNĐ") cleanNext = cleanNext.replace(/,/g, "");
     cleanNext = cleanNext.replace(/[^0-9,]/g, "");
     
@@ -145,52 +170,33 @@ export default function CameraModalScreen() {
     if (!isPinching.current) {
       const { pageX, pageY } = e.nativeEvent;
       
-      // Xóa timeout cũ nếu có
-      if (focusTimeout.current) clearTimeout(focusTimeout.current);
+      // 🚀 MẸO RUNG LENS (LENS JITTER): Ép phần cứng quét lại tiêu cự tự động
+      setZoom(prev => Math.min(prev + 0.00001, 1));
+      setTimeout(() => setZoom(prev => Math.max(prev - 0.00001, 0)), 150);
 
-      // Delay 150ms để phân biệt giữa Tap và Pinch/Swipe
+      if (focusTimeout.current) clearTimeout(focusTimeout.current);
       focusTimeout.current = setTimeout(() => {
         setFocusPos({ x: pageX, y: pageY - insets.top - 50 });
         focusAlpha.setValue(0);
-        
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-        // Animation vòng focus: Hiện lên -> Đợi -> Biến mất
         Animated.sequence([
-          Animated.timing(focusAlpha, {
-            toValue: 1,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-          Animated.timing(focusAlpha, {
-            toValue: 0,
-            duration: 200,
-            delay: 500,
-            useNativeDriver: true,
-          }),
+          Animated.timing(focusAlpha, { toValue: 1, duration: 150, useNativeDriver: true }),
+          Animated.timing(focusAlpha, { toValue: 0, duration: 200, delay: 500, useNativeDriver: true }),
         ]).start();
-      }, 150);
+      }, 50);
     }
   };
 
   const onMove = (e: any) => {
     const touches = e.nativeEvent.touches;
-    
     if (touches.length === 2) {
       isPinching.current = true;
-      
-      // QUAN TRỌNG: Nếu đang pinch thì hủy ngay lập tức vòng focus
       if (focusTimeout.current) {
         clearTimeout(focusTimeout.current);
         focusTimeout.current = null;
       }
-      focusAlpha.setValue(0); // Ẩn vòng focus ngay khi bắt đầu zoom
-
-      const dist = Math.hypot(
-        touches[0].pageX - touches[1].pageX,
-        touches[0].pageY - touches[1].pageY,
-      );
-
+      focusAlpha.setValue(0); 
+      const dist = Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
       if (startDist.current === null) {
         startDist.current = dist;
         startZoom.current = zoomRef.current;
@@ -204,9 +210,35 @@ export default function CameraModalScreen() {
   };
 
   const handleCapture = async () => {
+    if (!cameraRef.current) return;
+
+    // 🚀 BẬT HIỆU ỨNG CHỚP MÀN HÌNH ĐỂ ĐÁNH LỪA THỊ GIÁC (UI FLASH)
+    Animated.sequence([
+      Animated.timing(fakeFlashAlpha, { toValue: 1, duration: 40, useNativeDriver: true }),
+      Animated.timing(fakeFlashAlpha, { toValue: 0, duration: 300, useNativeDriver: true })
+    ]).start();
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const res = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+    
+    // Giảm nhẹ quality xuống 0.7 để Flash phần cứng phản hồi lẹ hơn
+    const res = await cameraRef.current.takePictureAsync({ quality: 0.7, shutterSound: true });
     setPhoto(res.uri);
+  };
+
+  const handlePickImage = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert("Thiếu quyền", "Hãy cho phép truy cập thư viện ảnh để chọn hóa đơn nhé!");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setPhoto(result.assets[0].uri);
+    }
   };
 
   const handleSaveToGallery = async () => {
@@ -221,17 +253,34 @@ export default function CameraModalScreen() {
     }
   };
 
-  const handleFinalSave = () => {
+  const handleFinalSave = async () => {
     if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền.");
+    
+    let finalPhotoUri = photo!;
+    if (finalPhotoUri && (finalPhotoUri.includes('Cache') || finalPhotoUri.includes('ImagePicker'))) {
+      finalPhotoUri = await saveImageToPermanentStorage(finalPhotoUri);
+    }
+
     const normalized = amount.replace(/\./g, "").replace(",", ".");
     const numAmount = parseFloat(normalized);
     const baseAmount = numAmount * (currency.rate || 1);
+    
     if (editId && editId !== "undefined") {
-      updateExpense(Number(editId), normalized, currency.code, baseAmount, photo!, selectedTag);
+      updateExpense(Number(editId), normalized, currency.code, baseAmount, finalPhotoUri, selectedTag);
     } else {
-      addExpense(normalized, currency.code, baseAmount, photo!, selectedTag);
+      addExpense(normalized, currency.code, baseAmount, finalPhotoUri, selectedTag);
     }
-    router.back();
+    
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    DeviceEventEmitter.emit('REFRESH_HOME');
+
+    if (isRootMode && onSaveSuccess) {
+      resetCameraState(); 
+      onSaveSuccess();    
+    } else {
+      router.back();
+    }
   };
 
   if (!permission?.granted) {
@@ -242,44 +291,111 @@ export default function CameraModalScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={[styles.headerArea, isKeyboardVisible && { height: 35 }]}>
-        <View style={styles.pill} />
-        <TouchableOpacity style={styles.closeIcon} onPress={() => router.back()}><Ionicons name="close-circle" size={32} color="#333" /></TouchableOpacity>
-      </View>
+      
+      {photo && (
+        <View style={[styles.headerAreaForm, isKeyboardVisible && { height: 35 }]}>
+          <View style={styles.pill} />
+          <TouchableOpacity 
+            style={styles.closeIconForm} 
+            onPress={() => {
+              if (isRootMode) { resetCameraState(); } else { router.back(); }
+            }}
+          >
+            <Ionicons name="close-circle" size={32} color="#333" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {!photo ? (
-  <View style={{ flex: 1 }}>
-    <CameraViewfinder 
-      ref={cameraRef} 
-      facing={facing} 
-      zoom={zoom} 
-      focusPos={focusPos} 
-      focusAlpha={focusAlpha} 
-      onGrant={onGrant} 
-      onMove={onMove} 
-      onRelease={() => { startDist.current = null; isPinching.current = false; }} 
-    />
-    <View style={styles.uiOverlay} pointerEvents="box-none">
-      {/* ZOOM BADGE: Đã trả lại logic cũ */}
-      <View style={styles.zoomBadge}>
-        <Text style={styles.zoomText}>
-          {zoom < 0.01 ? "0.5x" : (zoom / ZOOM_1X).toFixed(1) + "x"}
-        </Text>
-      </View>
+        <View style={styles.locketContainer}>
+          
+          <View style={styles.topHeaderBar}>
+            <View style={{ width: 44 }} />
+            
+            <TouchableOpacity style={styles.headerPillBtn}>
+              <Ionicons name="wallet" size={16} color="#fff" style={{marginRight: 6}} />
+              <Text style={styles.headerPillText}>Hôm nay: {todayTotalDisplay}{currency.symbol}</Text>
+            </TouchableOpacity>
+            
+            {!isRootMode ? (
+              <TouchableOpacity style={styles.headerRoundBtn} onPress={() => router.back()}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 44 }} />
+            )}
+          </View>
 
-      <CameraControls 
-          // ZOOM LABEL TRÊN NÚT BẤM: Trả lại logic hiển thị .5x hoặc số nguyên
-          zoomLabel={zoom < 0.01 ? ".5x" : (zoom / ZOOM_1X).toFixed(0) + "x"} 
-          onZoomToggle={toggleNextZoom} 
-          onFlip={() => { 
-            setFacing(f => f === "back" ? "front" : "back"); 
-            zoomRef.current = ZOOM_1X; 
-            setZoom(ZOOM_1X); 
-          }} 
-          onCapture={handleCapture} 
-      />
-    </View>
-  </View>
+          <View style={styles.cameraViewport}>
+            <CameraViewfinder 
+              ref={cameraRef} 
+              facing={facing} 
+              zoom={zoom} 
+              flash={flash}     // 🚀 FLASH TRUYỀN XUỐNG NATIVE
+              focusPos={focusPos} 
+              focusAlpha={focusAlpha} 
+              onGrant={onGrant} 
+              onMove={onMove} 
+              onRelease={() => { startDist.current = null; isPinching.current = false; }} 
+            />
+
+            {/* 🚀 LỚP MÀNG TRẮNG CHỚP LÊN ĐỂ ĐÁNH LỪA THỊ GIÁC (UI FLASH) */}
+            <Animated.View 
+              style={[StyleSheet.absoluteFill, { backgroundColor: '#fff', opacity: fakeFlashAlpha, zIndex: 99 }]} 
+              pointerEvents="none" 
+            />
+
+            <View style={styles.cameraInnerControls}>
+               <TouchableOpacity style={styles.iconCircleBtn} onPress={() => {
+                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                 setFlash(f => f === "off" ? "on" : f === "on" ? "auto" : "off");
+               }}>
+                  <Ionicons 
+                    name={flash === "on" ? "flash" : flash === "auto" ? "flash-outline" : "flash-off"} 
+                    size={20} 
+                    color={flash === "on" ? "#FFD700" : "#fff"} 
+                  />
+               </TouchableOpacity>
+               
+               <TouchableOpacity style={styles.iconCircleBtn} onPress={toggleNextZoom}>
+                  <Text style={styles.zoomLabelText}>
+                    {zoom < 0.01 ? "1x" : (zoom / ZOOM_1X).toFixed(0) + "x"}
+                  </Text>
+               </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.bottomAreaContainer}>
+             <View style={styles.captureRow}>
+               
+               <TouchableOpacity style={styles.galleryThumb} onPress={handlePickImage}>
+                 <Ionicons name="images" size={22} color="#fff" />
+               </TouchableOpacity>
+
+               <TouchableOpacity style={styles.captureRing} onPress={handleCapture}>
+                  <View style={styles.captureButtonInner} />
+               </TouchableOpacity>
+
+               <TouchableOpacity style={styles.flipBtn} onPress={() => {
+                  setFacing(f => f === "back" ? "front" : "back"); 
+                  zoomRef.current = ZOOM_1X; setZoom(ZOOM_1X); 
+               }}>
+                  <Ionicons name="sync" size={28} color="#fff" />
+               </TouchableOpacity>
+             </View>
+
+             {isRootMode && (
+               <View style={styles.swipeHistoryCue}>
+                 <View style={styles.historyCueImg}>
+                   <Ionicons name="receipt" size={12} color="#fff" />
+                 </View>
+                 <Text style={styles.historyCueText}>Lịch sử giao dịch</Text>
+                 <Ionicons name="chevron-up" size={16} color="#888" />
+               </View>
+             )}
+
+          </View>
+        </View>
       ) : (
         <ExpenseForm 
             photo={photo} 
@@ -313,12 +429,111 @@ export default function CameraModalScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerArea: { height: 50, alignItems: "center", justifyContent: "center", zIndex: 100 },
+  headerAreaForm: { height: 50, alignItems: "center", justifyContent: "center", zIndex: 100 },
   pill: { width: 40, height: 4, backgroundColor: "#1a1a1a", borderRadius: 2 },
-  closeIcon: { position: "absolute", right: 20 },
-  uiOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: "space-between", paddingVertical: 20, alignItems: "center" },
-  zoomBadge: { backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 10 },
-  zoomText: { color: "#FFD700", fontSize: 11, fontWeight: "bold" },
+  closeIconForm: { position: "absolute", right: 20 },
   yellowText: { color: "#FFD700", fontWeight: "bold" },
-  permissionBtn: { padding: 20, borderWidth: 1, borderColor: "#FFD700", borderRadius: 15 }
+  permissionBtn: { padding: 20, borderWidth: 1, borderColor: "#FFD700", borderRadius: 15 },
+  
+  locketContainer: { flex: 1, backgroundColor: '#000' },
+  
+  topHeaderBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+  },
+  headerRoundBtn: {
+    width: 44, height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1c1c1e',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  headerPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1c1c1e',
+    paddingHorizontal: 15,
+    height: 40,
+    borderRadius: 20,
+  },
+  headerPillText: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
+
+  cameraViewport: { 
+    flex: 1, 
+    borderRadius: 45, 
+    overflow: 'hidden',
+    marginHorizontal: 0,
+    position: 'relative' // Để absolute Flash Overlay bám vào
+  },
+  cameraInnerControls: { 
+    position: 'absolute', 
+    top: 15, left: 15, right: 15, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between',
+    zIndex: 100 // Đảm bảo nổi trên lớp Flash
+  },
+  iconCircleBtn: { 
+    width: 40, height: 40, 
+    borderRadius: 20, 
+    backgroundColor: 'rgba(0,0,0,0.4)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  zoomLabelText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  
+  bottomAreaContainer: {
+    paddingTop: 25,
+    paddingBottom: 25, 
+    alignItems: 'center'
+  },
+  captureRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 30,
+    marginBottom: 25
+  },
+  captureRing: { 
+    width: 86, height: 86, 
+    borderRadius: 43, 
+    borderWidth: 5, 
+    borderColor: '#FFD700', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  captureButtonInner: { 
+    width: 70, height: 70, 
+    borderRadius: 35, 
+    backgroundColor: '#fff' 
+  },
+  galleryThumb: { 
+    width: 50, height: 50, 
+    borderRadius: 16, 
+    backgroundColor: '#1c1c1e', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  flipBtn: { 
+    width: 50, height: 50, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  
+  swipeHistoryCue: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  historyCueImg: {
+    width: 26, height: 26,
+    borderRadius: 8,
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8
+  },
+  historyCueText: { color: '#fff', fontSize: 15, fontWeight: 'bold', marginRight: 5 },
 });

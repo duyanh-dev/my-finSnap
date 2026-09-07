@@ -4,21 +4,25 @@
  * Shift: UI/UX Focused
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   StyleSheet, View, Text, Image, Dimensions, RefreshControl, 
   TouchableOpacity, Modal, Alert, Animated, TextInput, ScrollView,
-  LayoutAnimation, Platform, UIManager
+  LayoutAnimation, Platform, UIManager, DeviceEventEmitter, KeyboardAvoidingView, Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { getExpenses, initDatabase, deleteExpense, getAllTags } from '../../src/components/services/database';
+import { getExpenses, initDatabase, deleteExpense, getAllTags, updateExpense, saveTag } from '../../src/components/services/database';
 import { getCurrencyConfig, Currency, CURRENCIES, convertCurrency } from '../../src/components/services/settings_db';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 
-const { width } = Dimensions.get('window');
+// LOGIC HOOKS
+import useImageUpload from '../../src/hooks/useImageUpload';
+import useMultiSelect from '../../src/hooks/useMultiSelect'; 
+
+const { width, height } = Dimensions.get('window');
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -28,6 +32,10 @@ export interface Expense { id: number; amount: string; currency: string; amount_
 export interface TagInfo { name: string; icon: string; color: string; }
 type Period = 'day' | 'week' | 'month' | 'year';
 type LayoutType = 1 | 2 | 3;
+
+// 🚀 DANH SÁCH ICON VÀ MÀU CHO FORM TẠO TAG MỚI
+const ICON_LIST = ['cart', 'restaurant', 'airplane', 'car', 'gift', 'cafe', 'game-controller', 'fitness', 'briefcase', 'home', 'heart', 'shirt'];
+const COLOR_LIST = ['#FFD700', '#FF6B6B', '#4D96FF', '#6BCB77', '#AC70FF', '#F94C10', '#00DFA2', '#FFFFFF'];
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -42,8 +50,32 @@ export default function HomeScreen() {
   const [userTags, setUserTags] = useState<TagInfo[]>([]);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [scrollY] = useState(() => new Animated.Value(0));
 
-  const scrollY = useRef(new Animated.Value(0)).current;
+  // STATE CHO MODAL GẮN THẺ & TẠO THẺ
+  const [isBulkTagModalOpen, setIsBulkTagModalOpen] = useState(false);
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
+  
+  // 🚀 CÁC STATE LƯU THÔNG TIN TAG MỚI
+  const [newTagName, setNewTagName] = useState("");
+  const [selIcon, setSelIcon] = useState('cart');
+  const [selColor, setSelColor] = useState('#FFD700');
+
+  const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
+  const [fabMenuAnim] = useState(() => new Animated.Value(0));
+
+  const toggleFabMenu = (show: boolean) => {
+    if (show) {
+      setIsFabMenuOpen(true);
+      Animated.spring(fabMenuAnim, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80 }).start();
+    } else {
+      Animated.timing(fabMenuAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setIsFabMenuOpen(false));
+    }
+  };
+
+  const menuTranslateY = fabMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] });
+  const menuScale = fabMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
+  const menuOpacity = fabMenuAnim;
 
   const loadData = async () => {
     initDatabase();
@@ -55,12 +87,19 @@ export default function HomeScreen() {
     applyFilters(data, period, searchQuery, activeTagFilter);
   };
 
+  const { pickImage } = useImageUpload();
+  const { isSelectMode, selectedIds, toggleSelectMode, toggleSelection, selectAll, deselectAll, handleDeleteSelected, clearSelection } = useMultiSelect(loadData); 
+
   useFocusEffect(useCallback(() => { loadData(); }, [period, searchQuery, activeTagFilter]));
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('REFRESH_HOME', () => { loadData(); });
+    return () => { subscription.remove(); };
+  }, [period, searchQuery, activeTagFilter]);
 
   const applyFilters = (data: Expense[], p: Period, query: string, tag: string | null) => {
     const now = new Date();
     let result = data;
-
     result = result.filter(item => {
       const itemDate = new Date(item.date);
       if (p === 'day') return itemDate.toDateString() === now.toDateString();
@@ -68,18 +107,41 @@ export default function HomeScreen() {
       if (p === 'month') return itemDate.getMonth() === now.getMonth() && itemDate.getFullYear() === now.getFullYear();
       return itemDate.getFullYear() === now.getFullYear();
     });
-
     if (tag) result = result.filter(item => item.tag === tag);
-
     if (query) {
       const q = query.toLowerCase();
       result = result.filter(item => 
-        item.amount.includes(q) || 
-        item.tag?.toLowerCase().includes(q) ||
-        new Date(item.date).toLocaleDateString('vi-VN').includes(q)
+        item.amount.includes(q) || item.tag?.toLowerCase().includes(q) || new Date(item.date).toLocaleDateString('vi-VN').includes(q)
       );
     }
     setFilteredData(result);
+  };
+
+  const handleBulkTag = (tagName: string) => {
+    selectedIds.forEach(id => {
+      const item = filteredData.find(e => e.id === id);
+      if (item) updateExpense(item.id, item.amount, item.currency, item.amount_base, item.imageUri, tagName);
+    });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setIsBulkTagModalOpen(false);
+    clearSelection();
+    loadData();
+  };
+
+  // 🚀 LOGIC TẠO TAG MỚI ĐƯỢC CẬP NHẬT
+  const handleCreateBulkTag = () => {
+    if (!newTagName.trim()) return;
+    // Lưu tag mới kèm icon và màu đã chọn
+    saveTag(newTagName.trim(), selIcon, selColor, "");
+    
+    // Tiến hành gắn thẻ hàng loạt cho ảnh đang chọn
+    handleBulkTag(newTagName.trim());
+    
+    // Reset lại form
+    setIsCreatingTag(false);
+    setNewTagName("");
+    setSelIcon('cart');
+    setSelColor('#FFD700');
   };
 
   const handleSaveImage = async (uri: string) => {
@@ -89,12 +151,8 @@ export default function HomeScreen() {
         await MediaLibrary.saveToLibraryAsync(uri);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert("Thành công", "Đã lưu ảnh vào máy bạn rồi nhé! ✅");
-      } catch (e) {
-        Alert.alert("Lỗi", "Không thể lưu ảnh rồi bạn ơi.");
-      }
-    } else {
-      Alert.alert("Quyền truy cập", "Bạn cần cấp quyền lưu ảnh để dùng tính năng này.");
-    }
+      } catch (e) { Alert.alert("Lỗi", "Không thể lưu ảnh rồi bạn ơi."); }
+    } else { Alert.alert("Quyền truy cập", "Bạn cần cấp quyền lưu ảnh để dùng tính năng này."); }
   };
 
   const headerHeight = scrollY.interpolate({ inputRange: [0, 120], outputRange: [150, 45], extrapolate: 'clamp' });
@@ -217,21 +275,43 @@ export default function HomeScreen() {
               {groupedData[date].map((item) => {
                 const displayVal = convertCurrency(Number(item.amount), item.currency, currency.code);
                 const tagInfo = userTags.find(t => t.name === item.tag);
+                const isSelected = selectedIds.includes(item.id);
+
                 return (
                   <View key={item.id} style={{ width: columnWidth, marginBottom: 20 }}>
-                    <TouchableOpacity style={[styles.card, { height: columnWidth }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedItem(item); }}>
+                    <TouchableOpacity 
+                      style={[styles.card, { height: columnWidth }, isSelectMode && isSelected && styles.cardSelected]} 
+                      onPress={() => {
+                        if (isSelectMode) toggleSelection(item.id);
+                        else { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedItem(item); }
+                      }}
+                      onLongPress={() => {
+                        if (!isSelectMode) toggleSelectMode();
+                        toggleSelection(item.id);
+                      }}
+                    >
                       <Image source={{ uri: item.imageUri }} style={styles.image} />
-                      {item.tag ? (
+                      
+                      {isSelectMode && (
+                        <View style={styles.checkboxContainer}>
+                          <Ionicons name={isSelected ? "checkmark-circle" : "ellipse-outline"} size={24} color={isSelected ? "#FFD700" : "rgba(255,255,255,0.5)"} />
+                        </View>
+                      )}
+
+                      {item.tag && !isSelectMode ? (
                         <View style={[styles.itemTagBadge, tagInfo && { backgroundColor: tagInfo.color }]}>
                           <Ionicons name={(tagInfo?.icon as any) || "pricetag"} size={8} color="#000" /><Text style={styles.itemTagText}>{item.tag.toUpperCase()}</Text>
                         </View>
                       ) : null}
                       <View style={styles.cardOverlay}><Text style={[styles.cardAmount, { fontSize: layoutType === 3 ? 9 : 11 }]}>{formatDisplay(displayVal)}{currency.symbol}</Text></View>
                     </TouchableOpacity>
-                    <View style={styles.actionRow}>
-                      <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(item)}><Ionicons name="pencil" size={12} color="#000" /></TouchableOpacity>
-                      <TouchableOpacity style={styles.btnDelete} onPress={() => {Alert.alert("Xóa?", "Bạn có chắc chắn muốn xóa món này không?", [{text:"Hủy"}, {text:"Xóa", style:"destructive", onPress:() => {deleteExpense(item.id); loadData();}}])}}><Ionicons name="trash-outline" size={12} color="#FF6B6B" /></TouchableOpacity>
-                    </View>
+                    
+                    {!isSelectMode && (
+                      <View style={styles.actionRow}>
+                        <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(item)}><Ionicons name="pencil" size={12} color="#000" /></TouchableOpacity>
+                        <TouchableOpacity style={styles.btnDelete} onPress={() => {Alert.alert("Xóa?", "Bạn có chắc chắn muốn xóa món này không?", [{text:"Hủy"}, {text:"Xóa", style:"destructive", onPress:() => {deleteExpense(item.id); loadData();}}])}}><Ionicons name="trash-outline" size={12} color="#FF6B6B" /></TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 );
               })}
@@ -250,7 +330,6 @@ export default function HomeScreen() {
             <View style={styles.fullContent}>
               <View style={styles.fullImageWrapper}>
                 <Image source={{ uri: selectedItem.imageUri }} style={styles.fullImage} />
-                {/* TRẢ LẠI NÚT LƯU ẢNH TẠI ĐÂY */}
                 <TouchableOpacity style={styles.saveFloatingBtn} onPress={() => handleSaveImage(selectedItem.imageUri)}>
                   <Ionicons name="download-outline" size={24} color="#fff" />
                 </TouchableOpacity>
@@ -266,9 +345,160 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      <TouchableOpacity style={styles.fab} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/modal'); }}>
-        <Ionicons name="camera" size={28} color="black" />
-      </TouchableOpacity>
+      {/* MODAL 2 TRONG 1: GẮN THẺ & TẠO THẺ */}
+      <Modal visible={isBulkTagModalOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{width: '100%', justifyContent: 'flex-end'}}>
+            <View style={styles.tagModalContent}>
+              
+              {!isCreatingTag ? (
+                <>
+                  <View style={styles.modalTop}>
+                    <Text style={styles.modalTitle}>Gắn thẻ ({selectedIds.length})</Text>
+                    <TouchableOpacity onPress={() => setIsBulkTagModalOpen(false)}>
+                      <Ionicons name="close-circle" size={30} color="#444" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <ScrollView showsVerticalScrollIndicator={false} style={{maxHeight: height * 0.5}}>
+                    <TouchableOpacity style={styles.quickAddBtn} onPress={() => setIsCreatingTag(true)}>
+                      <Ionicons name="add-circle" size={20} color="#000" />
+                      <Text style={styles.quickAddText}>TẠO TAG MỚI</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={[styles.bulkTagItem, { borderLeftColor: '#888' }]} onPress={() => handleBulkTag("")}>
+                      <View style={[styles.iconBoxSmall, { backgroundColor: '#333' }]}><Ionicons name="close" size={18} color="#fff" /></View>
+                      <Text style={styles.bulkTagText}>GỠ BỎ THẺ ĐANG CÓ</Text>
+                    </TouchableOpacity>
+
+                    {userTags.map((t) => (
+                      <TouchableOpacity key={t.name} style={[styles.bulkTagItem, { borderLeftColor: t.color }]} onPress={() => handleBulkTag(t.name)}>
+                        <View style={[styles.iconBoxSmall, { backgroundColor: t.color + '20' }]}><Ionicons name={t.icon as any} size={18} color={t.color} /></View>
+                        <Text style={styles.bulkTagText}>{t.name.toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              ) : (
+                // 🚀 GIAO DIỆN TẠO TAG MỚI CÓ ĐẦY ĐỦ ICON VÀ MÀU SẮC
+                <>
+                  <View style={styles.modalTop}>
+                    <TouchableOpacity onPress={() => setIsCreatingTag(false)} style={{marginRight: 15}}>
+                      <Ionicons name="arrow-back" size={26} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={[styles.modalTitle, { flex: 1 }]}>Tạo Tag mới</Text>
+                  </View>
+
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ marginBottom: 15 }} keyboardShouldPersistTaps="handled">
+                    <TextInput 
+                      style={styles.quickInput} 
+                      placeholder="Nhập tên tag..." 
+                      placeholderTextColor="#555" 
+                      value={newTagName} 
+                      onChangeText={setNewTagName} 
+                    />
+                    
+                    <Text style={styles.labelSection}>BIỂU TƯỢNG</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                      {ICON_LIST.map(i => (
+                        <TouchableOpacity key={i} style={[styles.iconPick, selIcon === i && { backgroundColor: selColor }]} onPress={() => { Keyboard.dismiss(); setSelIcon(i); }}>
+                          <Ionicons name={i as any} size={22} color={selIcon === i ? "#000" : "#888"} />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+
+                    <Text style={styles.labelSection}>MÀU SẮC</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 30 }}>
+                      {COLOR_LIST.map(c => (
+                        <TouchableOpacity key={c} style={[styles.colorPick, { backgroundColor: c }, selColor === c && styles.colorActive]} onPress={() => { Keyboard.dismiss(); setSelColor(c); }} />
+                      ))}
+                    </ScrollView>
+
+                    <TouchableOpacity style={[styles.quickConfirmBtn, { backgroundColor: selColor }]} onPress={handleCreateBulkTag}>
+                      <Text style={[styles.quickConfirmText, { color: selColor === '#FFFFFF' ? '#000' : '#000' }]}>LƯU & GẮN THẺ</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                </>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* BACKDROP ĐỂ BẤM RA NGOÀI LÀ ĐÓNG MENU FAB */}
+      {isFabMenuOpen && !isSelectMode && (
+        <TouchableOpacity style={styles.fabBackdrop} activeOpacity={1} onPress={() => toggleFabMenu(false)} />
+      )}
+
+      {/* FAB MENU VỚI ANIMATED SMOOTH 60FPS */}
+      {isFabMenuOpen && !isSelectMode && (
+        <Animated.View style={[styles.fabMenuContainer, { opacity: menuOpacity, transform: [{ translateY: menuTranslateY }, { scale: menuScale }] }]}>
+          <TouchableOpacity style={styles.fabMenuItem} onPress={() => { toggleFabMenu(false); Alert.alert('Sắp ra mắt', 'Tính năng phân tích chi tiêu bằng AI sẽ có trong bản tới!'); }}>
+            <Text style={styles.fabMenuLabel}>Sắp ra mắt</Text>
+            <View style={[styles.fabMenuIcon, { backgroundColor: '#333' }]}><Ionicons name="sparkles" size={20} color="#FFD700" /></View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.fabMenuItem} onPress={() => { toggleFabMenu(false); toggleSelectMode(); }}>
+            <Text style={styles.fabMenuLabel}>Chọn & Xóa</Text>
+            <View style={[styles.fabMenuIcon, { backgroundColor: '#FF6B6B' }]}><Ionicons name="checkbox-outline" size={20} color="#fff" /></View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.fabMenuItem} onPress={() => { toggleFabMenu(false); pickImage(); }}>
+            <Text style={styles.fabMenuLabel}>Tải ảnh lên</Text>
+            <View style={styles.fabMenuIcon}><Ionicons name="images" size={20} color="#000" /></View>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
+      {/* THANH CÔNG CỤ (CHỌN NHIỀU) */}
+      {isSelectMode ? (
+        <View style={styles.selectionWrapper}>
+          
+          <TouchableOpacity onPress={toggleSelectMode} style={styles.selectionCloseOut}>
+            <Ionicons name="close" size={16} color="#fff" />
+          </TouchableOpacity>
+
+          <View style={styles.selectionBar}>
+            
+            <TouchableOpacity 
+              style={styles.selectionBarBtnBase}
+              onPress={() => {
+                const isAllSelected = selectedIds.length === filteredData.length && filteredData.length > 0;
+                if (isAllSelected) deselectAll();
+                else selectAll(filteredData.map(item => item.id));
+              }}
+            >
+              <Ionicons 
+                name={selectedIds.length === filteredData.length && filteredData.length > 0 ? "checkmark-done-circle" : "checkmark-done-circle-outline"} 
+                size={22} 
+                color="#FFD700" 
+              />
+              <Text style={{color: '#FFD700', fontSize: 11, fontWeight: 'bold', marginLeft: 4}}>Tất cả</Text>
+            </TouchableOpacity>
+
+            <View style={styles.selectionCountBox}>
+              <Text style={styles.selectionCount}>{selectedIds.length} mục</Text>
+            </View>
+
+            <View style={styles.selectionActionGroup}>
+              <TouchableOpacity onPress={() => selectedIds.length > 0 && setIsBulkTagModalOpen(true)} style={[styles.selectionBarActionBtn, { backgroundColor: selectedIds.length > 0 ? '#4D96FF20' : 'transparent' }]}>
+                <Ionicons name="pricetag" size={20} color={selectedIds.length > 0 ? "#4D96FF" : "#555"} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDeleteSelected} style={[styles.selectionBarActionBtn, { backgroundColor: selectedIds.length > 0 ? '#FF6B6B20' : 'transparent', marginLeft: 8 }]}>
+                <Ionicons name="trash" size={20} color={selectedIds.length > 0 ? "#FF6B6B" : "#555"} />
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      ) : (
+        <TouchableOpacity 
+          style={styles.fab} 
+          onPress={() => { isFabMenuOpen ? toggleFabMenu(false) : (Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), router.push('/modal')); }}
+          onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); toggleFabMenu(true); }}
+          delayLongPress={300}
+        >
+          <Ionicons name={isFabMenuOpen ? "close" : "camera"} size={30} color="black" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -313,7 +543,7 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, gap: 12, paddingRight: 5 },
   btnEdit: { backgroundColor: '#FFD700', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   btnDelete: { backgroundColor: 'rgba(255, 107, 107, 0.1)', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  fab: { position: 'absolute', right: 30, bottom: 110, backgroundColor: '#FFD700', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+  fab: { position: 'absolute', right: 30, bottom: 110, backgroundColor: '#FFD700', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', zIndex: 1000, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10 },
   fullViewContainer: { flex: 1, backgroundColor: 'rgba(10, 10, 12, 0.98)', justifyContent: 'center', alignItems: 'center', zIndex: 2000 },
   closeFullView: { position: 'absolute', top: 60, right: 25, zIndex: 10 },
   fullContent: { width: '90%', alignItems: 'center' },
@@ -329,5 +559,43 @@ const styles = StyleSheet.create({
   itemTagBadge: { position: 'absolute', top: 12, left: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4, zIndex: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
   itemTagText: { color: '#000', fontSize: 8, fontWeight: '900' },
   emptyState: { alignItems: 'center', marginTop: 50 },
-  emptyText: { color: '#444', marginTop: 15, fontWeight: '600' }
+  emptyText: { color: '#444', marginTop: 15, fontWeight: '600' },
+  fabBackdrop: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0, 0, 0, 0.6)', zIndex: 998 },
+  fabMenuContainer: { position: 'absolute', right: 38, bottom: 190, zIndex: 999, alignItems: 'flex-end', gap: 15 },
+  fabMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  fabMenuLabel: { backgroundColor: '#222', color: '#fff', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, fontSize: 13, fontWeight: 'bold', overflow: 'hidden' },
+  fabMenuIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFD700', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 5 },
+  cardSelected: { borderWidth: 3, borderColor: '#FFD700' },
+  checkboxContainer: { position: 'absolute', top: 12, right: 12, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12 },
+
+  // VỎ BỌC THANH CHỌN
+  selectionWrapper: { position: 'absolute', bottom: 35, left: 20, right: 20, zIndex: 1000 },
+  selectionCloseOut: { position: 'absolute', top: -14, right: -6, width: 28, height: 28, borderRadius: 14, backgroundColor: '#444', justifyContent: 'center', alignItems: 'center', zIndex: 1001, borderWidth: 2, borderColor: '#161618' },
+  selectionBar: { backgroundColor: '#222', borderRadius: 25, paddingHorizontal: 20, paddingVertical: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.5, shadowRadius: 10, elevation: 10 },
+  selectionBarBtnBase: { flexDirection: 'row', alignItems: 'center' },
+  selectionCountBox: { flex: 1, alignItems: 'center' },
+  selectionCount: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
+  selectionActionGroup: { flexDirection: 'row', alignItems: 'center' },
+  selectionBarActionBtn: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+
+  // CSS MODAL
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  tagModalContent: { backgroundColor: '#1c1c1e', borderTopLeftRadius: 35, borderTopRightRadius: 35, padding: 30, paddingBottom: 50 },
+  modalTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  bulkTagItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222224', padding: 15, borderRadius: 20, marginBottom: 12, borderLeftWidth: 4 },
+  iconBoxSmall: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  bulkTagText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+  quickAddBtn: { flexDirection: "row", backgroundColor: "#FFD700", padding: 15, borderRadius: 18, alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 15 },
+  quickAddText: { color: "#000", fontWeight: "bold", fontSize: 14 },
+  quickInput: { backgroundColor: "#2c2c2e", color: "#fff", padding: 18, borderRadius: 18, marginBottom: 20, fontSize: 16 },
+  quickConfirmBtn: { padding: 18, borderRadius: 18, alignItems: "center" },
+  quickConfirmText: { fontWeight: "900", fontSize: 16 },
+
+  // 🚀 CSS BỔ SUNG CHO TẠO TAG MỚI
+  labelSection: { color: '#555', fontSize: 11, fontWeight: 'bold', marginBottom: 12, letterSpacing: 1 },
+  iconPick: { width: 45, height: 45, borderRadius: 22, backgroundColor: '#2c2c2e', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  colorPick: { width: 36, height: 36, borderRadius: 18, marginRight: 15 },
+  colorActive: { borderWidth: 2, borderColor: '#fff' }
 });
