@@ -14,11 +14,10 @@ export default function TabIndex() {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(height)).current; 
   
-  // 🚀 STATE ĐIỀU KHIỂN TAB BAR: Mới vào app là false (Ẩn)
   const [isTabBarVisible, setIsTabBarVisible] = useState(false);
 
   const openHome = () => {
-    setIsTabBarVisible(true); // Vuốt lên là bật Tab Bar
+    setIsTabBarVisible(true); 
     Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
   };
 
@@ -29,7 +28,6 @@ export default function TabIndex() {
     return () => sub.remove();
   }, []);
 
-  // PAN 1: Chỉ giữ lại logic vuốt lên từ Camera
   const panResponderCamera = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gs) => gs.dy < -20, // Kích hoạt khi vuốt lên
@@ -42,7 +40,6 @@ export default function TabIndex() {
   return (
     <View style={styles.container}>
       
-      {/* Khi state = true (đã mở Home), thẻ này sẽ đè lệnh 'display: none' của _layout.tsx */}
       <Tabs.Screen 
         options={{ 
           tabBarStyle: { 
@@ -53,12 +50,10 @@ export default function TabIndex() {
         }} 
       />
 
-      {/* LỚP CAMERA BÊN DƯỚI CÙNG (Thêm callback onSaveSuccess để lưu xong tự động vuốt màn Home lên) */}
       <View style={StyleSheet.absoluteFill} {...panResponderCamera.panHandlers}>
         <CameraModalScreen isRootMode={true} onSaveSuccess={openHome} />
       </View>
 
-      {/* LỚP HOMESCREEN TRƯỢT LÊN VÀ Ở LẠI LUÔN (Đã xóa vạch kéo xuống) */}
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY }], backgroundColor: '#161618' }]}>
         <HomeScreen />
       </Animated.View>

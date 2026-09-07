@@ -38,7 +38,6 @@ export const initDatabase = () => {
   }
 };
 
-// Thêm tham số tag vào hàm Add (mặc định là chuỗi rỗng)
 export const addExpense = (amount: string, currency: string, amount_base: number, imageUri: string, tag: string = '') => {
   const date = new Date().toISOString();
   db.runSync(
@@ -54,12 +53,10 @@ export const saveTag = (name: string, icon: string, color: string, bgImage: stri
   );
 };
 
-// Hàm lấy tất cả Tag
 export const getAllTags = () => {
   return db.getAllSync('SELECT * FROM tags');
 };
 
-// Thêm tham số tag vào hàm Update
 export const updateExpense = (id: number, amount: string, currency: string, amount_base: number, imageUri: string, tag: string = '') => {
   db.runSync(
     'UPDATE expenses SET amount = ?, currency = ?, amount_base = ?, imageUri = ?, tag = ? WHERE id = ?',
@@ -69,11 +66,9 @@ export const updateExpense = (id: number, amount: string, currency: string, amou
 
 export const deleteTag = (tagName: string) => {
   db.runSync('DELETE FROM tags WHERE name = ?', [tagName]);
-  // Giữ lại món đồ nhưng gỡ tag ra để không mất dữ liệu chi tiêu
   db.runSync('UPDATE expenses SET tag = "" WHERE tag = ?', [tagName]);
 };
 
-// Hàm cập nhật Album (Bao gồm đổi tên): Cần update cả 2 bảng để không mất liên kết
 export const updateTagFull = (oldName: string, newName: string, icon: string, color: string, bgImage: string) => {
   db.runSync(
     'INSERT OR REPLACE INTO tags (name, icon, color, bgImage) VALUES (?, ?, ?, ?)',

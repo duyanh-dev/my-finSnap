@@ -33,7 +33,7 @@ const ICON_LIST = ['cart', 'restaurant', 'airplane', 'car', 'gift', 'cafe', 'gam
 const COLOR_LIST = ['#FFD700', '#FF6B6B', '#4D96FF', '#6BCB77', '#AC70FF', '#F94C10', '#00DFA2', '#FFFFFF'];
 
 // =====================================================================
-// 🚀 1. COMPONENT THẺ TAG
+// 🚀 COMPONENT THẺ TAG
 // =====================================================================
 const AlbumListItem = ({ item, currency, onSelect, onEdit, onDelete }: any) => {
   const swipeableRef = useRef<any>(null);
@@ -94,7 +94,7 @@ const AlbumListItem = ({ item, currency, onSelect, onEdit, onDelete }: any) => {
 };
 
 // =====================================================================
-// 🚀 2. MÀN HÌNH CHÍNH
+// 🚀 MÀN HÌNH CHÍNH
 // =====================================================================
 export default function ExploreScreen() {
   const router = useRouter();
@@ -111,7 +111,6 @@ export default function ExploreScreen() {
   const [selColor, setSelColor] = useState('#FFD700');
   const [selBg, setSelBg] = useState<string | null>(null);
 
-  // 🚀 BỘ NHỚ TẠM ĐỂ LƯU VỊ TRÍ TAG (TRÁNH BỊ NHẢY XUỐNG CUỐI KHI EDIT)
   const tagOrderRef = useRef<string[]>([]);
 
   const loadData = async () => {
@@ -137,12 +136,9 @@ export default function ExploreScreen() {
         return { name: t.name, icon: t.icon, color: t.color, bgImage: validBg, totalBase, count: related.length };
       });
 
-      // 🚀 LOGIC ĐÓNG BĂNG VỊ TRÍ TAG
       if (tagOrderRef.current.length === 0 && tagData.length > 0) {
-        // Lần đầu tiên load: Lấy đúng thứ tự hiện tại của Database
         tagOrderRef.current = tagData.map(t => t.name);
       } else {
-        // Những lần sau: Thêm tag mới vào cuối danh sách (nếu có)
         const existingNames = new Set(tagOrderRef.current);
         tagData.forEach(t => {
           if (!existingNames.has(t.name)) {
@@ -151,7 +147,6 @@ export default function ExploreScreen() {
         });
       }
 
-      // 🚀 Sắp xếp lại Tag Data y hệt như bộ nhớ đã lưu
       tagData.sort((a, b) => {
         return tagOrderRef.current.indexOf(a.name) - tagOrderRef.current.indexOf(b.name);
       });
@@ -183,7 +178,6 @@ export default function ExploreScreen() {
     }
 
     if (isEditAlbum) {
-      // 🚀 NẾU EDIT: Tìm vị trí tag cũ trong bộ nhớ và thế tên mới vào đúng chỗ đó!
       const idx = tagOrderRef.current.indexOf(oldTagName);
       if (idx !== -1) {
         tagOrderRef.current[idx] = trimmedNewName;
@@ -223,7 +217,6 @@ export default function ExploreScreen() {
         text: "Xóa", 
         style: "destructive", 
         onPress: () => { 
-          // 🚀 Khi xóa Tag, cũng phải dọn luôn trong bộ nhớ vị trí
           tagOrderRef.current = tagOrderRef.current.filter(n => n !== name);
           deleteTag(name); 
           loadData(); 

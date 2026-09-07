@@ -170,7 +170,6 @@ export default function CameraModalScreen({ isRootMode = false, onSaveSuccess }:
     if (!isPinching.current) {
       const { pageX, pageY } = e.nativeEvent;
       
-      // 🚀 MẸO RUNG LENS (LENS JITTER): Ép phần cứng quét lại tiêu cự tự động
       setZoom(prev => Math.min(prev + 0.00001, 1));
       setTimeout(() => setZoom(prev => Math.max(prev - 0.00001, 0)), 150);
 
@@ -212,7 +211,6 @@ export default function CameraModalScreen({ isRootMode = false, onSaveSuccess }:
   const handleCapture = async () => {
     if (!cameraRef.current) return;
 
-    // 🚀 BẬT HIỆU ỨNG CHỚP MÀN HÌNH ĐỂ ĐÁNH LỪA THỊ GIÁC (UI FLASH)
     Animated.sequence([
       Animated.timing(fakeFlashAlpha, { toValue: 1, duration: 40, useNativeDriver: true }),
       Animated.timing(fakeFlashAlpha, { toValue: 0, duration: 300, useNativeDriver: true })
@@ -220,7 +218,6 @@ export default function CameraModalScreen({ isRootMode = false, onSaveSuccess }:
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     
-    // Giảm nhẹ quality xuống 0.7 để Flash phần cứng phản hồi lẹ hơn
     const res = await cameraRef.current.takePictureAsync({ quality: 0.7, shutterSound: true });
     setPhoto(res.uri);
   };
@@ -331,7 +328,7 @@ export default function CameraModalScreen({ isRootMode = false, onSaveSuccess }:
               ref={cameraRef} 
               facing={facing} 
               zoom={zoom} 
-              flash={flash}     // 🚀 FLASH TRUYỀN XUỐNG NATIVE
+              flash={flash}     
               focusPos={focusPos} 
               focusAlpha={focusAlpha} 
               onGrant={onGrant} 
@@ -339,7 +336,6 @@ export default function CameraModalScreen({ isRootMode = false, onSaveSuccess }:
               onRelease={() => { startDist.current = null; isPinching.current = false; }} 
             />
 
-            {/* 🚀 LỚP MÀNG TRẮNG CHỚP LÊN ĐỂ ĐÁNH LỪA THỊ GIÁC (UI FLASH) */}
             <Animated.View 
               style={[StyleSheet.absoluteFill, { backgroundColor: '#fff', opacity: fakeFlashAlpha, zIndex: 99 }]} 
               pointerEvents="none" 
@@ -466,14 +462,14 @@ const styles = StyleSheet.create({
     borderRadius: 45, 
     overflow: 'hidden',
     marginHorizontal: 0,
-    position: 'relative' // Để absolute Flash Overlay bám vào
+    position: 'relative' 
   },
   cameraInnerControls: { 
     position: 'absolute', 
     top: 15, left: 15, right: 15, 
     flexDirection: 'row', 
     justifyContent: 'space-between',
-    zIndex: 100 // Đảm bảo nổi trên lớp Flash
+    zIndex: 100 
   },
   iconCircleBtn: { 
     width: 40, height: 40, 

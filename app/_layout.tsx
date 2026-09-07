@@ -15,10 +15,10 @@ export default function RootLayout() {
         <Stack.Screen 
           name="modal" 
           options={{ 
-            // CHUYỂN THÀNH FULL SCREEN MODAL
+            // FULL SCREEN MODAL
             presentation: 'fullScreenModal', 
             headerShown: false,
-            gestureEnabled: false, // Tắt hoàn toàn vuốt của hệ thống
+            gestureEnabled: false, 
           }} 
         />
       </Stack>

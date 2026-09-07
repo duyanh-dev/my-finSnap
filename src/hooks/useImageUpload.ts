@@ -8,8 +8,7 @@ export default function useImageUpload() {
   const router = useRouter();
 
   const pickImage = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); // Rung mạnh báo hiệu kích hoạt
-    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); 
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert("Thiếu quyền", "Hãy cho phép truy cập thư viện ảnh để tải hóa đơn lên nhé!");
@@ -22,8 +21,7 @@ export default function useImageUpload() {
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      // Bắn thẳng sang Modal Camera và truyền ảnh vào param `oldImage`
-      // CameraModalScreen của ông sẽ tự hiểu và bật ExpenseForm lên luôn!
+      
       router.push({
         pathname: '/modal',
         params: { oldImage: result.assets[0].uri }

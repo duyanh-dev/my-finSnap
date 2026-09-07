@@ -21,7 +21,6 @@ export default function CalendarScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(TODAY.toDateString());
 
-  // State để quản lý những ngăn xếp (Tag) nào đang được mở
   const [expandedTags, setExpandedTags] = useState<string[]>([]);
 
   const loadData = async () => {
@@ -51,7 +50,7 @@ export default function CalendarScreen() {
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1);
     setCurrentDate(newDate);
     setSelectedDate(newDate.getMonth() === TODAY.getMonth() && newDate.getFullYear() === TODAY.getFullYear() ? TODAY.toDateString() : newDate.toDateString());
-    setExpandedTags([]); // Reset khi đổi tháng
+    setExpandedTags([]); 
   };
 
   const goToday = () => {
@@ -83,7 +82,6 @@ export default function CalendarScreen() {
     return days;
   }, [currentDate]);
 
-  // Nhóm chi tiêu của ngày được chọn theo TAG
   const groupedExpenses = useMemo(() => {
     const dayExpenses = history.filter(ex => new Date(ex.date).toDateString() === selectedDate);
     const groups: Record<string, Expense[]> = {};

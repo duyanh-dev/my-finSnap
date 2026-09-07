@@ -1,6 +1,5 @@
-// Đường dẫn: src/hooks/useMultiSelect.ts
 import { useState } from 'react';
-import { Alert, DeviceEventEmitter } from 'react-native'; // 🚀 Thêm DeviceEventEmitter
+import { Alert, DeviceEventEmitter } from 'react-native'; 
 import * as Haptics from 'expo-haptics';
 import { deleteExpense } from '../components/services/database';
 
@@ -13,7 +12,6 @@ export default function useMultiSelect(onDeleteSuccess: () => void) {
     const nextState = !isSelectMode;
     setIsSelectMode(nextState);
     setSelectedIds([]); 
-    // 🚀 PHÁT TÍN HIỆU: Bật Select Mode -> Ẩn Tab Bar (false), Tắt Select Mode -> Hiện Tab Bar (true)
     DeviceEventEmitter.emit('SET_TAB_BAR', !nextState);
   };
 
@@ -37,7 +35,6 @@ export default function useMultiSelect(onDeleteSuccess: () => void) {
   const clearSelection = () => {
     setIsSelectMode(false);
     setSelectedIds([]);
-    // 🚀 PHÁT TÍN HIỆU: Khi xóa xong hoặc gắn thẻ xong -> Hiện lại Tab Bar
     DeviceEventEmitter.emit('SET_TAB_BAR', true);
   };
 
@@ -53,7 +50,7 @@ export default function useMultiSelect(onDeleteSuccess: () => void) {
           style: "destructive", 
           onPress: () => {
             selectedIds.forEach(id => deleteExpense(id));
-            clearSelection(); // Hàm này sẽ gọi hiện Tab Bar lại luôn
+            clearSelection();
             onDeleteSuccess();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } 

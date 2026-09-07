@@ -33,7 +33,6 @@ export interface TagInfo { name: string; icon: string; color: string; }
 type Period = 'day' | 'week' | 'month' | 'year';
 type LayoutType = 1 | 2 | 3;
 
-// 🚀 DANH SÁCH ICON VÀ MÀU CHO FORM TẠO TAG MỚI
 const ICON_LIST = ['cart', 'restaurant', 'airplane', 'car', 'gift', 'cafe', 'game-controller', 'fitness', 'briefcase', 'home', 'heart', 'shirt'];
 const COLOR_LIST = ['#FFD700', '#FF6B6B', '#4D96FF', '#6BCB77', '#AC70FF', '#F94C10', '#00DFA2', '#FFFFFF'];
 
@@ -128,16 +127,12 @@ export default function HomeScreen() {
     loadData();
   };
 
-  // 🚀 LOGIC TẠO TAG MỚI ĐƯỢC CẬP NHẬT
   const handleCreateBulkTag = () => {
     if (!newTagName.trim()) return;
-    // Lưu tag mới kèm icon và màu đã chọn
     saveTag(newTagName.trim(), selIcon, selColor, "");
     
-    // Tiến hành gắn thẻ hàng loạt cho ảnh đang chọn
     handleBulkTag(newTagName.trim());
     
-    // Reset lại form
     setIsCreatingTag(false);
     setNewTagName("");
     setSelIcon('cart');
@@ -322,7 +317,6 @@ export default function HomeScreen() {
         )}
       </Animated.ScrollView>
 
-      {/* MODAL CHI TIẾT */}
       <Modal visible={!!selectedItem} animationType="fade" transparent statusBarTranslucent>
         <View style={styles.fullViewContainer}>
           <TouchableOpacity style={styles.closeFullView} onPress={() => setSelectedItem(null)}><Ionicons name="close-circle" size={44} color="#fff" /></TouchableOpacity>
@@ -345,7 +339,6 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* MODAL 2 TRONG 1: GẮN THẺ & TẠO THẺ */}
       <Modal visible={isBulkTagModalOpen} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{width: '100%', justifyContent: 'flex-end'}}>
@@ -380,7 +373,6 @@ export default function HomeScreen() {
                   </ScrollView>
                 </>
               ) : (
-                // 🚀 GIAO DIỆN TẠO TAG MỚI CÓ ĐẦY ĐỦ ICON VÀ MÀU SẮC
                 <>
                   <View style={styles.modalTop}>
                     <TouchableOpacity onPress={() => setIsCreatingTag(false)} style={{marginRight: 15}}>
@@ -425,12 +417,10 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* BACKDROP ĐỂ BẤM RA NGOÀI LÀ ĐÓNG MENU FAB */}
       {isFabMenuOpen && !isSelectMode && (
         <TouchableOpacity style={styles.fabBackdrop} activeOpacity={1} onPress={() => toggleFabMenu(false)} />
       )}
 
-      {/* FAB MENU VỚI ANIMATED SMOOTH 60FPS */}
       {isFabMenuOpen && !isSelectMode && (
         <Animated.View style={[styles.fabMenuContainer, { opacity: menuOpacity, transform: [{ translateY: menuTranslateY }, { scale: menuScale }] }]}>
           <TouchableOpacity style={styles.fabMenuItem} onPress={() => { toggleFabMenu(false); Alert.alert('Sắp ra mắt', 'Tính năng phân tích chi tiêu bằng AI sẽ có trong bản tới!'); }}>
@@ -593,7 +583,6 @@ const styles = StyleSheet.create({
   quickConfirmBtn: { padding: 18, borderRadius: 18, alignItems: "center" },
   quickConfirmText: { fontWeight: "900", fontSize: 16 },
 
-  // 🚀 CSS BỔ SUNG CHO TẠO TAG MỚI
   labelSection: { color: '#555', fontSize: 11, fontWeight: 'bold', marginBottom: 12, letterSpacing: 1 },
   iconPick: { width: 45, height: 45, borderRadius: 22, backgroundColor: '#2c2c2e', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   colorPick: { width: 36, height: 36, borderRadius: 18, marginRight: 15 },

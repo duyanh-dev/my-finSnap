@@ -38,7 +38,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
   let itemPrices: number[] = []; 
   let maxValOverall = 0;
 
-  // 1. QUÉT METADATA (Ngày, SDT, MST)
   const allDates = rawText.match(dateRegex);
   if (allDates) metadata.date = allDates[0];
 
@@ -48,7 +47,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
   const allTax = rawText.match(taxRegex);
   if (allTax) metadata.tax = allTax[0];
 
-  // 2. NHẬN DIỆN CỬA HÀNG
   for (const m of MERCHANTS) {
     if (rawText.toLowerCase().includes(m.keywords[0])) {
       merchant = m.name;
@@ -57,7 +55,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
     }
   }
 
-  // 3. VÒNG LẶP PHÂN TÍCH CHI TIẾT
   lines.forEach((line, index) => {
     const matches = line.match(priceRegex);
     if (!matches) return;
@@ -66,7 +63,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
       const cleanVal = parseInt(m.replace(/[.,\s]/g, ""));
       if (cleanVal < 1000 || cleanVal > 50000000) return;
 
-      // LOẠI TRỪ TRỰC TIẾP: Nếu số này trùng khớp với SDT hoặc MST vừa tìm được
       if (metadata.phone.includes(m) || metadata.tax.includes(m)) return;
 
       if (cleanVal > maxValOverall) maxValOverall = cleanVal;
@@ -74,7 +70,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
       let score = 0;
       let reasons = [];
 
-      // A. LOGIC JACKPOT (Cùng dòng)
       const matchIndex = line.indexOf(m);
       const textBefore = line.substring(0, matchIndex);
       let isJackpot = false;
@@ -86,7 +81,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
           }
       });
 
-      // B. NGỮ CẢNH RỘNG (3 dòng)
       const prevLine = lines[index - 1] || "";
       const prevPrevLine = lines[index - 2] || "";
       const context = prevPrevLine + " " + prevLine + " " + line;
@@ -101,13 +95,11 @@ export const deepAnalyzeReceipt = (rawText: string) => {
         reasons.push("Gần từ khóa thanh toán (+40)");
       }
 
-      // C. HÌNH PHẠT (Né rác cực mạnh)
       if (trashKeywords.some(k => context.includes(k))) {
         score -= 250;
         reasons.push("Nghi là tiền thối/giảm giá (-250)");
       }
       
-      // Nếu dòng chứa Ngày, SDT hoặc Mã số thuế -> Trừ điểm nặng nếu lỡ quét trúng
       if (dateRegex.test(line) || phoneRegex.test(line) || taxRegex.test(line)) {
         score -= 300;
         reasons.push("Dòng chứa thông tin Metadata (Ngày/SDT/MST) (-300)");
@@ -119,7 +111,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
         reasons.push("Dính từ rác/đơn giá (-100)");
       }
 
-      // D. VỊ TRÍ & ĐỊNH DẠNG
       const posRatio = index / lines.length;
       if (line.length < 30 && goldKeywords.some(k => context.includes(k))) {
         score += 50;
@@ -130,7 +121,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
         reasons.push("Vị trí cuối bill (+30)");
       }
 
-      // E. TRÍCH XUẤT MÓN LẺ
       if ((line.includes("x") || line.includes("*") || line.includes("qty")) && posRatio < 0.8) {
           itemPrices.push(cleanVal);
       }
@@ -139,7 +129,6 @@ export const deepAnalyzeReceipt = (rawText: string) => {
     });
   });
 
-  // 4. ĐỐI CHIẾU TOÁN HỌC (Cross-check)
   const sumOfItems = itemPrices.reduce((a, b) => a + b, 0);
 
   candidates = candidates.map(c => {

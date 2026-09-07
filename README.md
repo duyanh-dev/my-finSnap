@@ -48,6 +48,7 @@ npx expo start -c
 npx eas-cli update --branch production --platform ios --message "updated"
 
 ### Project Structure
+
 ```
 MyLocketFinance
 ├─ app
@@ -57,6 +58,7 @@ MyLocketFinance
 │  │  ├─ index.tsx
 │  │  ├─ settings.tsx
 │  │  └─ _layout.tsx
+│  ├─ index.tsx
 │  ├─ modal.tsx
 │  └─ _layout.tsx
 ├─ app.json
@@ -88,6 +90,7 @@ MyLocketFinance
 │  ├─ use-color-scheme.ts
 │  ├─ use-color-scheme.web.ts
 │  └─ use-theme-color.ts
+├─ metro.config.js
 ├─ package-lock.json
 ├─ package.json
 ├─ README.md
@@ -108,11 +111,18 @@ MyLocketFinance
 │  │  │  └─ CustomTabBar.tsx
 │  │  └─ services
 │  │     ├─ database.ts
-│  │     └─ settings_db.ts
+│  │     ├─ ocr_service.ts
+│  │     ├─ price_brain.ts
+│  │     ├─ settings_db.ts
+│  │     └─ storage_service.ts
+│  ├─ hooks
+│  │  ├─ useImageUpload.ts
+│  │  └─ useMultiSelect.ts
 │  ├─ screens
 │  │  ├─ CalendarScreen.tsx
 │  │  ├─ CameraModalScreen.tsx
 │  │  ├─ Home.tsx
+│  │  ├─ ReceiptScanner.tsx
 │  │  ├─ SettingScreen.tsx
 │  │  └─ TagList.tsx
 │  └─ types

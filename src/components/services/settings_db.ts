@@ -7,7 +7,6 @@ export interface Currency {
   rate: number; 
 }
 
-// Đây là bộ khung cơ bản, rate này sẽ được cập nhật từ Internet
 export const CURRENCIES: Currency[] = [
   { label: 'Việt Nam Đồng', code: 'VNĐ', symbol: 'đ', rate: 1 },
   { label: 'Đô la Úc', code: 'AUD', symbol: '$', rate: 16500 },
@@ -18,22 +17,18 @@ export const CURRENCIES: Currency[] = [
 const STORAGE_KEY = '@user_currency_config';
 const RATES_KEY = '@exchange_rates';
 
-// --- HÀM 1: Lấy tỷ giá từ Internet ---
 export const updateExchangeRates = async () => {
   try {
-    // Sử dụng API miễn phí của er-api.com (lấy VNĐ làm gốc)
     const response = await fetch('https://open.er-api.com/v6/latest/VND');
     const data = await response.json();
 
     if (data && data.rates) {
-      // API trả về 1 VNĐ = x USD. Ta cần đổi ngược lại: 1 USD = (1/x) VNĐ
       const newRates: { [key: string]: number } = {};
       
       CURRENCIES.forEach(curr => {
         if (curr.code === 'VNĐ') {
           newRates[curr.code] = 1;
         } else {
-          // Ví dụ: 1 VNĐ = 0.00004 USD => 1 USD = 1 / 0.00004 = 25.000 VNĐ
           const rateToVnd = 1 / data.rates[curr.code];
           newRates[curr.code] = rateToVnd;
         }
@@ -48,7 +43,6 @@ export const updateExchangeRates = async () => {
   }
 };
 
-// --- HÀM 2: Lấy danh sách Currency kèm tỷ giá mới nhất ---
 export const getLatestCurrencies = async (): Promise<Currency[]> => {
   try {
     const savedRates = await AsyncStorage.getItem(RATES_KEY);
@@ -64,7 +58,6 @@ export const getLatestCurrencies = async (): Promise<Currency[]> => {
   }
 };
 
-// --- HÀM 3: Quy đổi tiền tệ ---
 export const convertCurrency = (amount: number, fromCode: string, toCode: string, currentRates?: Currency[]) => {
   // Nếu có truyền list rates mới nhất thì dùng, ko thì dùng list mặc định
   const list = currentRates || CURRENCIES;
@@ -75,7 +68,6 @@ export const convertCurrency = (amount: number, fromCode: string, toCode: string
   return (amount * fromCurrency.rate) / toCurrency.rate;
 };
 
-// --- HÀM 4: Lưu & Lấy Config người dùng ---
 export const saveCurrencyConfig = async (currencyCode: string) => {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, currencyCode);
