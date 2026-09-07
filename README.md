@@ -41,7 +41,7 @@
 
 FinSnap is built with a **Modular Feature-based Architecture**, prioritizing scalability and clean code:
 
-- **Frontend:** React Native (Expo SDK 52)
+- **Frontend:** React Native (Expo SDK 57)
 - **Routing:** Expo Router (File-based routing)
 - **Database:** SQLite (via `expo-sqlite`) for local-first, private data storage.
 - **State Management:** React Hooks & Context API.
