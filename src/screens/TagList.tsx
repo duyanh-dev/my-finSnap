@@ -1,26 +1,43 @@
 /**
- * Project: MyLocketFinance
+ * Project: FinSnap
  * Developer: Bui Duy Anh (anhbui.dev)
  * Shift: UI/UX Focused - Premium Tag List
  */
 
-import React, { useState, useCallback, useRef } from 'react';
-import { 
-  StyleSheet, View, Text, TouchableOpacity, FlatList, 
-  Image, Dimensions, Modal, TextInput, ScrollView, Alert,
-  KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Animated
-} from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
-import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
-import { 
-  getExpenses, getAllTags, saveTag, initDatabase, 
-  deleteTag, updateTagFull, deleteExpense 
+import {
+  deleteExpense,
+  deleteTag,
+  getAllTags,
+  getExpenses,
+  initDatabase,
+  saveTag,
+  updateTagFull
 } from '../../src/components/services/database';
-import { getCurrencyConfig, Currency, CURRENCIES } from '../../src/components/services/settings_db';
+import { CURRENCIES, Currency, getCurrencyConfig } from '../../src/components/services/settings_db';
 import { saveImageToPermanentStorage } from '../../src/components/services/storage_service';
 
 const { width, height } = Dimensions.get('window');

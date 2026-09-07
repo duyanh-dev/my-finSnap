@@ -1,26 +1,40 @@
 /**
- * Project: MyLocketFinance
+ * Project: FinSnap
  * Developer: Bui Duy Anh (anhbui.dev)
  * Shift: UI/UX Focused
  */
 
-import React, { useState, useCallback } from 'react';
-import { 
-  StyleSheet, View, Text, Image, Dimensions, RefreshControl, 
-  TouchableOpacity, Modal, Alert, Animated, TextInput, ScrollView,
-  LayoutAnimation, Platform, UIManager, DeviceEventEmitter, KeyboardAvoidingView, Keyboard
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { getExpenses, initDatabase, deleteExpense, getAllTags, updateExpense, saveTag } from '../../src/components/services/database';
-import { getCurrencyConfig, Currency, CURRENCIES, convertCurrency } from '../../src/components/services/settings_db';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  Alert, Animated,
+  DeviceEventEmitter,
+  Dimensions,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  UIManager,
+  View
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { deleteExpense, getAllTags, getExpenses, initDatabase, saveTag, updateExpense } from '../../src/components/services/database';
+import { CURRENCIES, Currency, convertCurrency, getCurrencyConfig } from '../../src/components/services/settings_db';
 
 // LOGIC HOOKS
 import useImageUpload from '../../src/hooks/useImageUpload';
-import useMultiSelect from '../../src/hooks/useMultiSelect'; 
+import useMultiSelect from '../../src/hooks/useMultiSelect';
 
 const { width, height } = Dimensions.get('window');
 

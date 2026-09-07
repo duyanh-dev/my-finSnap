@@ -5,29 +5,33 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**FinSnap** (formerly MyLocketFinance) is a visual-first expense tracking mobile application inspired by the minimalist aesthetic of **Locket**. Unlike traditional finance apps that focus on cold numbers and spreadsheets, FinSnap turns every transaction into a visual memory, helping you manage your budget through the lens of your life.
+**FinSnap** (formerly FinSnap) is a visual-first expense tracking mobile application inspired by the minimalist aesthetic of **Locket**. Unlike traditional finance apps that focus on cold numbers and spreadsheets, FinSnap turns every transaction into a visual memory, helping you manage your budget through the lens of your life.
 
 ---
 
 ## ✨ Key Features
 
 ### 📸 Pro Camera Interface
+
 - **Native-feel Experience:** Built with `expo-camera` for high-performance capturing.
 - **Precision Zoom:** Full support for **0.5x Ultra-wide**, 1x, and digital zoom.
 - **Smart Focus:** Custom animated focus rings with haptic feedback.
 - **Quick Snap:** Designed for speed—capture the receipt or the item in under 2 seconds.
 
 ### 📅 Smart Calendar Stacks
+
 - **Visual Grouping:** Transactions are automatically grouped into "Stacks" by Album/Tag.
-- **Interactive Stacks:** Tap on a stack (e.g., *Emart* or *Travel*) to "unfold" the detailed history of that day.
+- **Interactive Stacks:** Tap on a stack (e.g., _Emart_ or _Travel_) to "unfold" the detailed history of that day.
 - **Deep Dark Mode:** A sleek, unified interface optimized for OLED screens.
 
 ### 🌍 Global Finance Engine
+
 - **Live Exchange Rates:** Real-time synchronization using Open Exchange Rates API.
 - **Smart Conversion:** Automatically converts foreign currencies to your base currency while maintaining precision to avoid floating-point errors.
 - **Multi-Currency Support:** Track spending in VNĐ, USD, EUR, and more.
 
 ### 📁 Aesthetic Organization
+
 - **Visual Albums:** Organize spending into custom albums like "Daily Grocery", "Coffee Time", or "Paris Trip".
 - **Quick Tagging:** Create and assign new albums directly from the camera preview.
 
@@ -50,7 +54,7 @@ npx eas-cli update --branch production --platform ios --message "updated"
 ### Project Structure
 
 ```
-MyLocketFinance
+FinSnap
 ├─ app
 │  ├─ (tabs)
 │  │  ├─ calendar.tsx

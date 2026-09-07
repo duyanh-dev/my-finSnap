@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CURRENCIES, Currency, getCurrencyConfig, getLatestCurrencies, saveCurrencyConfig, updateExchangeRates } from '../../src/components/services/settings_db';
 
@@ -122,7 +122,7 @@ export default function SettingsScreen() {
           </View>
           <View style={[styles.listItem, { borderBottomWidth: 0 }]}>
             <Text style={styles.itemLabel}>Sản phẩm bởi</Text>
-            <Text style={styles.itemSub}>MyLocketFinance Lab</Text>
+            <Text style={styles.itemSub}>FinSnap Lab</Text>
           </View>
         </View>
 

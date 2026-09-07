@@ -1,5 +1,5 @@
 /**
- * Project: MyLocketFinance
+ * Project: FinSnap
  * Developer: Bui Duy Anh (anhbui.dev)
  * Shift: UI/UX Focused
  */

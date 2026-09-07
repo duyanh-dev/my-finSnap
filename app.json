@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "MyLocketFinance",
-    "slug": "MyLocketFinance",
+    "name": "FinSnap",
+    "slug": "FinSnap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mylocketfinance",
+    "scheme": "FinSnap",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -19,7 +19,10 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static",
@@ -56,17 +59,18 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "70ac74fc-3cdb-4626-9a7b-0ec066e51d28"
-      }
-    },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/70ac74fc-3cdb-4626-9a7b-0ec066e51d28"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a5e21ab4-5116-40ba-a85c-337981dd447e"
+      }
+    },
+    "owner": "kweitei"
   }
 }
